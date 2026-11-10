@@ -16,9 +16,9 @@ export const GRID = {
   top: 25,
   bottom: 105,
   markerY: 15,
-  /** viewBox starts left of 0 so multi-digit "12fr" labels are never clipped. */
-  originX: -6,
-  width: 106,
+  /** viewBox starts left of 0 so large "7fr" / "12fr" labels are never clipped. */
+  originX: -28,
+  width: 128,
 } as const;
 
 /** Rendered diagram width in pt (PDF and on-screen paper preview), before the scale multiplier. */
@@ -79,11 +79,11 @@ export function buildFretboardGeometry(voicing: ChordVoicing, size: DiagramSize 
     geometry.nut = { x: GRID.left - 0.6, y: GRID.top - 5, width: GRID.right - GRID.left + 1.2, height: 5 };
   } else {
     geometry.baseFretLabel = {
-      x: GRID.left - 2,
-      y: fretY(0) + dy / 2 + 3.5,
+      x: GRID.left - 5,
+      y: fretY(0) + dy / 2 + 6,
       text: `${baseFret}fr`,
-      fontSize: 9,
-      anchor: "end",
+      fontSize: 18,
+      anchor: 'end',
     };
   }
 

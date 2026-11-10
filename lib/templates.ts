@@ -9,6 +9,40 @@ export interface SongTemplate {
   rawInput: string;
 }
 
+/**
+ * Clean starter skeleton used when creating a brand-new song entry from the library
+ * so the user does not have to manually format headers, sections, or chord lines.
+ */
+export const SKELETON_SONG_TEMPLATE = `Title: Untitled Song
+Artist: Artist Name
+Key: G
+Capo: 0
+Tuning: E A D G B E
+
+[Verse 1]
+G                       Cadd9               G
+Write your first verse lyrics right underneath the chords
+Em7                     D                   G
+Align each chord above the syllable where it changes
+
+[Chorus]
+Cadd9                   G
+Enter the main chorus hook or refrain here
+Em7                     D                   G
+Click any chord on the page to pick a different fretboard shape
+
+[Verse 2]
+G                       Cadd9               G
+Add a second verse or paste lines from your song
+Em7                     D                   G
+Use the Key selector on the left to auto-calculate Capo
+
+[Bridge]
+Am7                     Cadd9
+Build into the bridge section here
+G                       D
+Before returning to the final chorus`;
+
 export const SONG_TEMPLATES: SongTemplate[] = [
   {
     id: 'amazing-grace-ug',

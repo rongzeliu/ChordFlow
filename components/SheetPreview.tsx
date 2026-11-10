@@ -21,6 +21,7 @@ interface SheetPreviewProps {
   capo: number;
   scale: number;
   pageSize: PageSize;
+  onSelectChord?: (chordName: string) => void;
 }
 
 const INK = '#292524';
@@ -35,6 +36,7 @@ export function SheetPreview({
   capo,
   scale,
   pageSize,
+  onSelectChord,
 }: SheetPreviewProps) {
   const plan = planSheet(song, { preset, diagramScope, displayMode, capo });
   const isTwoColumn = preset === 'worship_two_column';
@@ -43,7 +45,7 @@ export function SheetPreview({
   return (
     <article
       aria-label="Sheet preview"
-      className={`mx-auto w-full bg-white text-stone-900 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.04)] ${
+      className={`mx-auto w-full bg-white text-stone-900 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_24px_rgba(0,0,0,0.04)] print:max-w-none print:shadow-none ${
         pageSize === 'A4' ? 'max-w-[210mm]' : 'max-w-[8.5in]'
       } px-8 py-10 sm:px-[20mm] sm:py-[18mm]`}
     >
@@ -66,12 +68,21 @@ export function SheetPreview({
       {plan.glossary.length > 0 && (
         <section aria-label="Chord glossary" className="mb-[10mm] flex flex-wrap gap-x-6 gap-y-4">
           {plan.glossary.map((chord) => (
-            <figure key={chord.name} className="flex flex-col items-center gap-1">
-              <figcaption style={{ fontSize: pt(9) }} className="font-semibold">
+            <button
+              key={chord.name}
+              type="button"
+              onClick={() => onSelectChord?.(chord.name)}
+              aria-label={`Change shape for ${chord.name}`}
+              className="group flex flex-col items-center gap-1 rounded-lg px-2 py-1.5 transition hover:bg-amber-50/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            >
+              <span
+                style={{ fontSize: pt(9) }}
+                className="font-semibold text-stone-900 group-hover:text-amber-700"
+              >
                 {prettyAccidentals(chord.name)}
-              </figcaption>
+              </span>
               <FretboardSvg voicing={chord} size={diagramSize} scale={scale * 1.15} color={INK} />
-            </figure>
+            </button>
           ))}
         </section>
       )}
@@ -115,8 +126,13 @@ export function SheetPreview({
                 >
                   {line.tokens.map((tok, tIdx) => (
                     <span key={tIdx} className="inline-flex flex-col items-start">
-                      {tok.label && (
-                        <span className="inline-flex flex-col items-start pr-[0.5em]">
+                      {tok.label && tok.chord && (
+                        <button
+                          type="button"
+                          onClick={() => tok.chord && onSelectChord?.(tok.chord)}
+                          aria-label={`Change shape for ${tok.label}`}
+                          className="group mr-[0.5em] inline-flex cursor-pointer flex-col items-start rounded px-1 py-0.5 text-left transition hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-amber-600"
+                        >
                           {tok.showDiagram && tok.voicing && (
                             <span style={{ marginBottom: pt(2) }}>
                               <FretboardSvg voicing={tok.voicing} size={diagramSize} scale={scale} color={INK} />
@@ -124,11 +140,13 @@ export function SheetPreview({
                           )}
                           <span
                             style={{ fontSize: pt(9.5) }}
-                            className={`leading-tight font-semibold ${tok.isCustom ? 'text-amber-700' : 'text-stone-700'}`}
+                            className={`leading-tight font-semibold decoration-amber-500/60 decoration-dashed underline-offset-2 group-hover:underline ${
+                              tok.isCustom ? 'text-amber-700' : 'text-stone-700 group-hover:text-amber-800'
+                            }`}
                           >
                             {prettyAccidentals(tok.label)}
                           </span>
-                        </span>
+                        </button>
                       )}
                       <span style={{ fontSize: pt(10.5) }} className="leading-snug whitespace-pre">
                         {tok.text || '\u00A0'}

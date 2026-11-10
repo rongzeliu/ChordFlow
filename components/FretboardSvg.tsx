@@ -47,6 +47,7 @@ export function FretboardSvg({
           x={g.baseFretLabel.x}
           y={g.baseFretLabel.y}
           fontSize={g.baseFretLabel.fontSize}
+          fontWeight={700}
           textAnchor={g.baseFretLabel.anchor}
           fill={color}
           fontFamily="Helvetica, Arial, sans-serif"

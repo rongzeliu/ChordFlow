@@ -3,13 +3,14 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Guitar, Music, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeft, FilePlus2, Guitar, Music, Plus, Search, Trash2, X } from 'lucide-react';
 import { prettyAccidentals } from '@/lib/music';
 import { useChordFlowStore } from '@/lib/store';
 
 export default function SavedSongsPage() {
   const router = useRouter();
-  const { savedSongs, activeSavedSongId, loadSavedSong, deleteSavedSong } = useChordFlowStore();
+  const { savedSongs, activeSavedSongId, loadSavedSong, deleteSavedSong, createNewSong } =
+    useChordFlowStore();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredSongs = useMemo(() => {
@@ -32,8 +33,13 @@ export default function SavedSongsPage() {
     router.push('/');
   };
 
+  const handleCreateNewSong = () => {
+    createNewSong();
+    router.push('/');
+  };
+
   return (
-    <div className="flex min-h-dvh flex-col bg-stone-100 text-stone-900">
+    <div className="fixed inset-0 flex flex-col overflow-y-auto bg-stone-100 text-stone-900">
       {/* Header */}
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 bg-white px-6">
         <div className="flex items-center gap-2.5">
@@ -41,13 +47,24 @@ export default function SavedSongsPage() {
           <span className="text-[15px] font-semibold tracking-tight">ChordFlow</span>
         </div>
 
-        <Link
-          href="/"
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
-        >
-          <ArrowLeft className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
-          <span>Back to editor</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleCreateNewSong}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>New song</span>
+          </button>
+
+          <Link
+            href="/"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+            <span>Back to editor</span>
+          </Link>
+        </div>
       </header>
 
       {/* Main Content */}
@@ -56,14 +73,25 @@ export default function SavedSongsPage() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-stone-900">Saved songs</h1>
             <p className="mt-1 text-sm text-stone-500">
-              Select a song to open its chord sheet and last played key in the workspace.
+              Select a song to open its chord sheet in the workspace, or start a new song from a
+              ready-to-fill skeleton template.
             </p>
           </div>
-          <span aria-live="polite" className="text-xs font-medium text-stone-400">
-            {searchQuery.trim()
-              ? `${filteredSongs.length} of ${savedSongs.length} songs`
-              : `${savedSongs.length} ${savedSongs.length === 1 ? 'song' : 'songs'}`}
-          </span>
+          <div className="flex items-center gap-3">
+            <span aria-live="polite" className="text-xs font-medium text-stone-400">
+              {searchQuery.trim()
+                ? `${filteredSongs.length} of ${savedSongs.length} songs`
+                : `${savedSongs.length} ${savedSongs.length === 1 ? 'song' : 'songs'}`}
+            </span>
+            <button
+              type="button"
+              onClick={handleCreateNewSong}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 text-xs font-medium text-amber-900 transition hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            >
+              <FilePlus2 className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
+              <span>New song from template</span>
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -108,15 +136,25 @@ export default function SavedSongsPage() {
             <Music className="mb-3 h-7 w-7 text-stone-300" aria-hidden="true" />
             <p className="text-sm font-medium text-stone-800">No saved songs yet</p>
             <p className="mt-1 max-w-sm text-xs text-stone-500">
-              Use the &ldquo;Save song&rdquo; button in the editor header to store songs along with
-              their last played key and custom voicings.
+              Create a new song with a pre-formatted skeleton template, or save your current song
+              from the editor header.
             </p>
-            <Link
-              href="/"
-              className="mt-5 inline-flex h-9 items-center rounded-lg bg-stone-900 px-4 text-xs font-medium text-white hover:bg-stone-800"
-            >
-              Open editor
-            </Link>
+            <div className="mt-5 flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleCreateNewSong}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-stone-900 px-4 text-xs font-medium text-white hover:bg-stone-800"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>New song from template</span>
+              </button>
+              <Link
+                href="/"
+                className="inline-flex h-9 items-center rounded-lg border border-stone-200 bg-white px-4 text-xs font-medium text-stone-700 hover:bg-stone-50"
+              >
+                Open editor
+              </Link>
+            </div>
           </div>
         ) : filteredSongs.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-stone-200 bg-white px-6 py-14 text-center">

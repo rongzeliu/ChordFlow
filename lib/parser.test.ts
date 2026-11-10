@@ -11,6 +11,7 @@ import {
 } from './parser';
 import { computeBaseFret, detectBarre, parseFretString } from './voicing';
 import { buildFretboardGeometry, GRID } from './fretboard';
+import { getVoicingCandidates } from './chordLibrary';
 import { calculateCapoForKey, transposeChord, transposeKey } from './music';
 import { planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
@@ -189,6 +190,17 @@ describe('fretboard SVG geometry & music transposition', () => {
     expect(calculateCapoForKey('G', 'G')).toBe(0);
     expect(calculateCapoForKey('E', 'F#')).toBe(2);
     expect(calculateCapoForKey('Cm', 'Ebm')).toBe(3);
+  });
+
+  it('returns multiple playable positions from TrueFire chart & chords-db for any chord', () => {
+    const gCandidates = getVoicingCandidates('G*');
+    expect(gCandidates.length).toBeGreaterThanOrEqual(4);
+    expect(gCandidates.some((c) => c.source === 'truefire')).toBe(true);
+    expect(gCandidates.some((c) => c.source === 'chords-db')).toBe(true);
+
+    const abMaj7 = getVoicingCandidates('Abmaj7');
+    expect(abMaj7.length).toBeGreaterThanOrEqual(2);
+    expect(abMaj7[0].voicing.frets).toEqual([4, -1, 5, 5, 4, -1]);
   });
 
   it('enforces First-Occurrence-Only diagram rules in sheet planning', () => {

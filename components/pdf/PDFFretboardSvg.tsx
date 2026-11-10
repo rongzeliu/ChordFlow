@@ -29,7 +29,7 @@ export function PDFFretboardSvg({ voicing, size = 'compact', scale = 1, color = 
           x={g.baseFretLabel.x}
           y={g.baseFretLabel.y}
           textAnchor={g.baseFretLabel.anchor}
-          style={{ fontSize: g.baseFretLabel.fontSize, fontFamily: 'Helvetica' }}
+          style={{ fontSize: g.baseFretLabel.fontSize, fontFamily: 'Helvetica-Bold' }}
           fill={color}
         >
           {g.baseFretLabel.text}

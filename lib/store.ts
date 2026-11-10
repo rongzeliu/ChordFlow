@@ -10,7 +10,7 @@ import type {
   LayoutPreset,
   PageSize,
 } from '@/types/chord';
-import { SONG_TEMPLATES } from './templates';
+import { SKELETON_SONG_TEMPLATE, SONG_TEMPLATES } from './templates';
 import { buildVoicing, parseFretString } from './voicing';
 
 export interface SavedSong {
@@ -70,6 +70,8 @@ interface ChordFlowState {
     shapeKey?: string;
     capo: number;
   }) => string;
+  /** Creates a brand-new song entry populated with a skeleton chord-sheet template and activates it. */
+  createNewSong: () => string;
   loadSavedSong: (id: string) => void;
   deleteSavedSong: (id: string) => void;
 }
@@ -87,7 +89,7 @@ const DEFAULT_SAVED_SONGS: SavedSong[] = [
     rawInput: SONG_TEMPLATES[0].rawInput,
     preset: SONG_TEMPLATES[0].defaultPreset,
     diagramSize: 'compact',
-    diagramScope: 'custom',
+    diagramScope: 'all',
     displayMode: 'shapes',
     scale: 1,
     pageSize: 'A4',
@@ -104,7 +106,7 @@ const DEFAULT_SAVED_SONGS: SavedSong[] = [
     rawInput: SONG_TEMPLATES[1].rawInput,
     preset: SONG_TEMPLATES[1].defaultPreset,
     diagramSize: 'compact',
-    diagramScope: 'custom',
+    diagramScope: 'all',
     displayMode: 'shapes',
     scale: 1,
     pageSize: 'A4',
@@ -121,7 +123,7 @@ export const useChordFlowStore = create<ChordFlowState>()(
       activeSavedSongId: 'seed-amazing-grace',
       preset: initialTemplate.defaultPreset,
       diagramSize: 'compact',
-      diagramScope: 'custom',
+      diagramScope: 'all',
       displayMode: 'shapes',
       scale: 1.0,
       pageSize: 'A4',
@@ -201,6 +203,53 @@ export const useChordFlowStore = create<ChordFlowState>()(
         return id;
       },
 
+      createNewSong: () => {
+        const state = get();
+        const existingUntitledCount = state.savedSongs.filter((s) =>
+          /^untitled song(\s+\d+)?$/i.test(s.title.trim()),
+        ).length;
+        const title =
+          existingUntitledCount === 0
+            ? 'Untitled Song'
+            : `Untitled Song ${existingUntitledCount + 1}`;
+        const rawInput = SKELETON_SONG_TEMPLATE.replace(
+          /^Title:\s*Untitled Song/m,
+          `Title: ${title}`,
+        );
+        const id = `song-${Date.now()}`;
+        const newEntry: SavedSong = {
+          id,
+          title,
+          artist: 'Artist Name',
+          lastPlayedKey: 'G',
+          shapeKey: 'G',
+          capo: 0,
+          rawInput,
+          preset: 'first_occurrence_only',
+          diagramSize: state.diagramSize,
+          diagramScope: 'all',
+          displayMode: 'shapes',
+          scale: 1.0,
+          pageSize: state.pageSize,
+          customOverrides: {},
+          updatedAt: new Date().toISOString(),
+        };
+
+        set({
+          rawInput,
+          activeTemplateId: 'skeleton',
+          activeSavedSongId: id,
+          preset: 'first_occurrence_only',
+          diagramScope: 'all',
+          displayMode: 'shapes',
+          scale: 1.0,
+          capoOverride: null,
+          customOverrides: {},
+          savedSongs: [newEntry, ...state.savedSongs],
+        });
+        return id;
+      },
+
       loadSavedSong: (id) => {
         const song = get().savedSongs.find((s) => s.id === id);
         if (!song) return;
@@ -210,7 +259,7 @@ export const useChordFlowStore = create<ChordFlowState>()(
           activeTemplateId: 'saved',
           preset: song.preset,
           diagramSize: song.diagramSize,
-          diagramScope: song.diagramScope,
+          diagramScope: 'all',
           displayMode: song.displayMode,
           scale: song.scale,
           pageSize: song.pageSize,

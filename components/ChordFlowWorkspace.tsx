@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Bookmark, Check, Guitar, Library, Plus, X } from 'lucide-react';
-import type { DiagramScope, DiagramSize, DisplayMode, LayoutPreset, PageSize } from '@/types/chord';
+import { Bookmark, Check, Download, Guitar, Library, Plus, X } from 'lucide-react';
+import type { DiagramSize, DisplayMode, LayoutPreset } from '@/types/chord';
+import { resolveVoicing } from '@/lib/chordLibrary';
 import { parseSong, parseSongBody } from '@/lib/parser';
 import { computeKeyInfo } from '@/lib/sheet';
 import {
@@ -16,20 +17,14 @@ import {
 import { mergeUserOverrides, useChordFlowStore } from '@/lib/store';
 import { SONG_TEMPLATES } from '@/lib/templates';
 import { fretsToString, parseFretString } from '@/lib/voicing';
+import { ChordVoicingDialog } from './ChordVoicingDialog';
 import { FretboardSvg } from './FretboardSvg';
 import { SheetPreview } from './SheetPreview';
 import { Field, inputClass, Segmented, SidebarSection } from './ui';
 
-const PDFDownloadButton = dynamic(
-  () => import('./pdf/PDFDownloadButton').then((m) => m.PDFDownloadButton),
-  {
-    ssr: false,
-    loading: () => (
-      <span className="inline-flex h-9 items-center rounded-lg bg-stone-200 px-4 text-xs font-medium text-stone-500">
-        Export PDF
-      </span>
-    ),
-  },
+const ExportPreviewDialog = dynamic(
+  () => import('./ExportPreviewDialog').then((m) => m.ExportPreviewDialog),
+  { ssr: false },
 );
 
 const PRESETS: { id: LayoutPreset; title: string; description: string }[] = [
@@ -45,7 +40,6 @@ export function ChordFlowWorkspace() {
     activeTemplateId,
     preset,
     diagramSize,
-    diagramScope,
     displayMode,
     scale,
     pageSize,
@@ -56,7 +50,6 @@ export function ChordFlowWorkspace() {
     loadTemplate,
     setPreset,
     setDiagramSize,
-    setDiagramScope,
     setDisplayMode,
     setScale,
     setPageSize,
@@ -71,6 +64,8 @@ export function ChordFlowWorkspace() {
   const [newChordFrets, setNewChordFrets] = useState('');
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [editingChord, setEditingChord] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // Grow the editor with its content, within sensible bounds so Layout & Options stay reachable.
   useEffect(() => {
@@ -80,11 +75,12 @@ export function ChordFlowWorkspace() {
     el.style.height = `${Math.min(340, Math.max(200, el.scrollHeight))}px`;
   }, [rawInput]);
 
+  const baseParsedSong = useMemo(() => parseSong(rawInput), [rawInput]);
+
   const parsedSong = useMemo(() => {
-    const base = parseSong(rawInput);
-    const customVoicings = mergeUserOverrides(base.customVoicings, customOverrides);
-    return { ...base, customVoicings, lines: parseSongBody(rawInput, customVoicings) };
-  }, [rawInput, customOverrides]);
+    const customVoicings = mergeUserOverrides(baseParsedSong.customVoicings, customOverrides);
+    return { ...baseParsedSong, customVoicings, lines: parseSongBody(rawInput, customVoicings) };
+  }, [baseParsedSong, rawInput, customOverrides]);
 
   const effectiveCapo = capoOverride ?? parsedSong.capo ?? 0;
   const keyInfo = useMemo(
@@ -92,6 +88,24 @@ export function ChordFlowWorkspace() {
     [parsedSong, effectiveCapo],
   );
   const customVoicingList = Array.from(parsedSong.customVoicings.values());
+
+  // Collect all unique chords in the song (both custom and standard) so the user can click any of them
+  const allSongChords = useMemo(() => {
+    const map = new Map(parsedSong.customVoicings);
+    for (const line of parsedSong.lines) {
+      for (const tok of line.tokens) {
+        if (tok.chord && tok.voicing && !map.has(tok.chord)) {
+          map.set(tok.chord, { ...tok.voicing, name: tok.chord });
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [parsedSong]);
+
+  const editingCurrentVoicing = useMemo(() => {
+    if (!editingChord) return undefined;
+    return resolveVoicing(editingChord, parsedSong.customVoicings);
+  }, [editingChord, parsedSong.customVoicings]);
 
   // Available target keys based on the song's base shape key (major or minor)
   const baseShapeKey = keyInfo.shapeKey ?? 'G';
@@ -128,9 +142,9 @@ export function ChordFlowWorkspace() {
   };
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-stone-100 text-stone-900">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-stone-100 text-stone-900 print:static print:h-auto print:overflow-visible print:bg-white">
       {/* Header */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 bg-white px-6">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 bg-white px-6 print:hidden">
         <div className="flex items-center gap-2.5">
           <Guitar className="h-5 w-5 text-amber-600" aria-hidden="true" />
           <span className="text-[15px] font-semibold tracking-tight">ChordFlow</span>
@@ -166,22 +180,20 @@ export function ChordFlowWorkspace() {
             </span>
           </Link>
 
-          <PDFDownloadButton
-            song={parsedSong}
-            preset={preset}
-            diagramSize={diagramSize}
-            diagramScope={diagramScope}
-            displayMode={displayMode}
-            capo={effectiveCapo}
-            scale={scale}
-            pageSize={pageSize}
-          />
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-stone-900 px-4 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Export</span>
+          </button>
         </nav>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row print:block print:overflow-visible">
         {/* Sidebar — wider with comfortable side gutter so scrolling happens smoothly outside the lyrics textarea */}
-        <aside className="min-h-0 shrink-0 divide-y divide-stone-100 overflow-y-auto border-stone-200 bg-white lg:w-[468px] lg:border-r">
+        <aside className="min-h-0 shrink-0 divide-y divide-stone-100 overflow-y-auto border-stone-200 bg-white lg:w-[468px] lg:border-r print:hidden">
           <SidebarSection
             title="Song"
             action={
@@ -216,8 +228,8 @@ export function ChordFlowWorkspace() {
               />
             </div>
             <p id="song-sheet-hint" className="text-xs leading-relaxed text-stone-400">
-              Define custom shapes like <code className="text-stone-600">G* = 320033</code>, then use{' '}
-              <code className="text-stone-600">G*</code> in the song.
+              Define custom shapes like <code className="text-stone-600">G* = 320033</code>, or click any
+              chord on the sheet to pick a different position.
             </p>
           </SidebarSection>
 
@@ -296,15 +308,6 @@ export function ChordFlowWorkspace() {
                   ]}
                 />
               </div>
-              <Segmented<DiagramScope>
-                label="Diagrams for"
-                value={diagramScope}
-                onChange={setDiagramScope}
-                options={[
-                  { value: 'custom', label: 'Custom' },
-                  { value: 'all', label: 'All' },
-                ]}
-              />
               <Segmented<DiagramSize>
                 label="Diagram size"
                 value={diagramSize}
@@ -312,15 +315,6 @@ export function ChordFlowWorkspace() {
                 options={[
                   { value: 'compact', label: 'S' },
                   { value: 'standard', label: 'L' },
-                ]}
-              />
-              <Segmented<PageSize>
-                label="Paper"
-                value={pageSize}
-                onChange={setPageSize}
-                options={[
-                  { value: 'A4', label: 'A4' },
-                  { value: 'LETTER', label: 'Letter' },
                 ]}
               />
               <Field label={`Scale · ${Math.round(scale * 100)}%`} htmlFor="scale">
@@ -339,27 +333,38 @@ export function ChordFlowWorkspace() {
           </SidebarSection>
 
           <SidebarSection
-            title="Custom voicings"
-            action={<span className="text-xs text-stone-400">{customVoicingList.length}</span>}
+            title="Song chords & voicings"
+            action={
+              <span className="text-xs text-stone-400">
+                Click any chord to change shape ({allSongChords.length || customVoicingList.length})
+              </span>
+            }
           >
-            {customVoicingList.length > 0 && (
+            {allSongChords.length > 0 && (
               <ul role="list" className="grid grid-cols-4 gap-2">
-                {customVoicingList.map((v) => (
+                {allSongChords.map((v) => (
                   <li
                     key={v.name}
-                    className="group relative flex flex-col items-center gap-1 rounded-lg py-2 hover:bg-stone-50"
+                    className="group relative flex flex-col items-center rounded-lg border border-transparent transition hover:border-stone-200 hover:bg-stone-50"
                   >
-                    <span className="text-xs font-medium text-stone-900">
-                      {prettyAccidentals(v.name)}
-                    </span>
-                    <FretboardSvg voicing={v} size="compact" scale={1.2} unit="px" color="#44403c" />
-                    <span className="font-mono text-[10px] text-stone-400">
-                      {fretsToString(v.frets)}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEditingChord(v.name)}
+                      aria-label={`Change voicing for ${v.name}`}
+                      className="flex w-full cursor-pointer flex-col items-center gap-1 rounded-lg py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+                    >
+                      <span className="text-xs font-medium text-stone-900 group-hover:text-amber-700">
+                        {prettyAccidentals(v.name)}
+                      </span>
+                      <FretboardSvg voicing={v} size="compact" scale={1.2} unit="px" color="#44403c" />
+                      <span className="font-mono text-[10px] text-stone-400">
+                        {fretsToString(v.frets)}
+                      </span>
+                    </button>
                     {customOverrides[v.name] && (
                       <button
                         type="button"
-                        aria-label={`Remove ${v.name}`}
+                        aria-label={`Reset ${v.name}`}
                         onClick={() => removeCustomOverride(v.name)}
                         className="absolute top-1 right-1 rounded p-0.5 text-stone-400 opacity-0 group-hover:opacity-100 hover:text-stone-900 focus-visible:opacity-100"
                       >
@@ -424,19 +429,53 @@ export function ChordFlowWorkspace() {
         </aside>
 
         {/* Preview canvas */}
-        <main className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-10 lg:px-16 lg:py-12">
+        <main
+          className={`min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-10 lg:px-16 lg:py-12 ${
+            exportOpen ? 'print:hidden' : 'print:overflow-visible print:p-0'
+          }`}
+        >
           <SheetPreview
             song={parsedSong}
             preset={preset}
             diagramSize={diagramSize}
-            diagramScope={diagramScope}
+            diagramScope="all"
             displayMode={displayMode}
             capo={effectiveCapo}
             scale={scale}
             pageSize={pageSize}
+            onSelectChord={(chord) => setEditingChord(chord)}
           />
         </main>
       </div>
+
+      {/* Interactive Chord Voicing Picker Popup */}
+      <ChordVoicingDialog
+        chordName={editingChord}
+        currentVoicing={editingCurrentVoicing}
+        songCustomVoicings={baseParsedSong.customVoicings}
+        hasUserOverride={Boolean(editingChord && customOverrides[editingChord])}
+        onSelectFrets={(chord, frets) => setCustomOverride(chord, frets)}
+        onResetOverride={(chord) => removeCustomOverride(chord)}
+        onClose={() => setEditingChord(null)}
+      />
+
+      {/* Export & Print Preview Modal Popup */}
+      <ExportPreviewDialog
+        open={exportOpen}
+        song={parsedSong}
+        preset={preset}
+        diagramSize={diagramSize}
+        diagramScope="all"
+        displayMode={displayMode}
+        capo={effectiveCapo}
+        scale={scale}
+        pageSize={pageSize}
+        onChangePreset={setPreset}
+        onChangeDiagramSize={setDiagramSize}
+        onChangeScale={setScale}
+        onChangePageSize={setPageSize}
+        onClose={() => setExportOpen(false)}
+      />
     </div>
   );
 }
