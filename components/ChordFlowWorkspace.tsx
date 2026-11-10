@@ -142,28 +142,30 @@ export function ChordFlowWorkspace() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-stone-100 text-stone-900 print:static print:h-auto print:overflow-visible print:bg-white">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-canvas text-primary print:static print:h-auto print:overflow-visible print:bg-surface">
       {/* Header */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 bg-white px-6 print:hidden">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-warm-border bg-base px-6 print:hidden">
         <div className="flex items-center gap-2.5">
-          <Guitar className="h-5 w-5 text-amber-600" aria-hidden="true" />
-          <span className="text-[15px] font-semibold tracking-tight">ChordFlow</span>
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-honey/30 text-primary">
+            <Guitar className="h-4 w-4 text-primary" aria-hidden="true" />
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight text-primary">ChordFlow</span>
         </div>
 
         <nav aria-label="Workspace actions" className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={handleSaveSong}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/25 bg-surface px-3.5 text-xs font-medium text-primary transition hover:border-primary/50 hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
           >
             {justSaved ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
-                <span className="text-emerald-700">Saved</span>
+                <Check className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                <span className="font-semibold text-primary">Saved</span>
               </>
             ) : (
               <>
-                <Bookmark className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+                <Bookmark className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
                 <span>Save song</span>
               </>
             )}
@@ -171,11 +173,11 @@ export function ChordFlowWorkspace() {
 
           <Link
             href="/saved"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/25 bg-surface px-3.5 text-xs font-medium text-primary transition hover:border-primary/50 hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
           >
-            <Library className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+            <Library className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
             <span>Saved songs</span>
-            <span className="ml-0.5 rounded-full bg-stone-100 px-1.5 py-0.5 font-mono text-[11px] text-stone-600">
+            <span className="ml-0.5 rounded-full bg-sage px-1.5 py-0.5 font-mono text-[11px] font-semibold text-primary">
               {savedSongs.length}
             </span>
           </Link>
@@ -183,7 +185,7 @@ export function ChordFlowWorkspace() {
           <button
             type="button"
             onClick={() => setExportOpen(true)}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-stone-900 px-4 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-medium text-base shadow-[0_1px_2px_rgba(26,56,43,0.16)] transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
           >
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Export</span>
@@ -193,7 +195,7 @@ export function ChordFlowWorkspace() {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row print:block print:overflow-visible">
         {/* Sidebar — wider with comfortable side gutter so scrolling happens smoothly outside the lyrics textarea */}
-        <aside className="min-h-0 shrink-0 divide-y divide-stone-100 overflow-y-auto border-stone-200 bg-white lg:w-[468px] lg:border-r print:hidden">
+        <aside className="min-h-0 shrink-0 divide-y divide-warm-border overflow-y-auto border-warm-border bg-base lg:w-[468px] lg:border-r print:hidden">
           <SidebarSection
             title="Song"
             action={
@@ -201,7 +203,7 @@ export function ChordFlowWorkspace() {
                 aria-label="Load an example song"
                 value={SONG_TEMPLATES.some((t) => t.id === activeTemplateId) ? activeTemplateId : ''}
                 onChange={(e) => e.target.value && loadTemplate(e.target.value)}
-                className="rounded-md border-0 bg-transparent py-1 pr-1 text-right text-xs text-stone-500 hover:text-stone-900 focus:ring-2 focus:ring-amber-500/30 focus:outline-none"
+                className="rounded-md border-0 bg-transparent py-1 pr-1 text-right text-xs font-medium text-muted hover:text-primary focus:ring-2 focus:ring-honey/50 focus:outline-none"
               >
                 <option value="">Load example…</option>
                 {SONG_TEMPLATES.map((t) => (
@@ -227,20 +229,23 @@ export function ChordFlowWorkspace() {
                 className={`${inputClass} resize-y font-mono text-xs leading-relaxed`}
               />
             </div>
-            <p id="song-sheet-hint" className="text-xs leading-relaxed text-stone-400">
-              Define custom shapes like <code className="text-stone-600">G* = 320033</code>, or click any
-              chord on the sheet to pick a different position.
+            <p id="song-sheet-hint" className="text-xs leading-relaxed text-muted">
+              Define custom shapes like{' '}
+              <code className="rounded bg-sage px-1 py-0.5 font-mono text-primary">
+                G* = 320033
+              </code>
+              , or click any chord on the sheet to pick a different position.
             </p>
           </SidebarSection>
 
           <SidebarSection title="Layout">
             <fieldset>
               <legend className="sr-only">Layout preset</legend>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {PRESETS.map((p) => (
                   <label
                     key={p.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-stone-50 has-[:checked]:bg-amber-50 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-amber-500"
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:bg-sage/70 has-[:checked]:border-honey/60 has-[:checked]:bg-honey-tint has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-honey"
                   >
                     <input
                       type="radio"
@@ -248,11 +253,11 @@ export function ChordFlowWorkspace() {
                       value={p.id}
                       checked={preset === p.id}
                       onChange={() => setPreset(p.id)}
-                      className="mt-0.5 accent-amber-600"
+                      className="mt-0.5 accent-forest"
                     />
                     <span>
-                      <span className="block text-sm font-medium text-stone-900">{p.title}</span>
-                      <span className="block text-xs text-stone-500">{p.description}</span>
+                      <span className="block text-sm font-medium text-primary">{p.title}</span>
+                      <span className="block text-xs text-muted">{p.description}</span>
                     </span>
                   </label>
                 ))}
@@ -284,13 +289,13 @@ export function ChordFlowWorkspace() {
               <Field label="Capo position">
                 <div
                   aria-live="polite"
-                  className="flex h-[38px] items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 text-sm"
+                  className="flex h-[38px] items-center justify-between rounded-lg border border-warm-border bg-sage/65 px-3 text-sm"
                 >
-                  <span className="font-medium text-stone-900">
+                  <span className="font-medium text-primary">
                     {effectiveCapo === 0 ? 'Open (No capo)' : `Fret ${effectiveCapo}`}
                   </span>
                   {keyInfo.shapeKey && (
-                    <span className="text-xs text-stone-500">
+                    <span className="text-xs font-medium text-muted">
                       {prettyAccidentals(keyInfo.shapeKey)} shapes
                     </span>
                   )}
@@ -326,7 +331,7 @@ export function ChordFlowWorkspace() {
                   step={0.05}
                   value={scale}
                   onChange={(e) => setScale(parseFloat(e.target.value))}
-                  className="h-[38px] w-full accent-amber-600"
+                  className="h-[38px] w-full accent-forest"
                 />
               </Field>
             </div>
@@ -335,7 +340,7 @@ export function ChordFlowWorkspace() {
           <SidebarSection
             title="Song chords & voicings"
             action={
-              <span className="text-xs text-stone-400">
+              <span className="text-xs text-muted">
                 Click any chord to change shape ({allSongChords.length || customVoicingList.length})
               </span>
             }
@@ -345,19 +350,25 @@ export function ChordFlowWorkspace() {
                 {allSongChords.map((v) => (
                   <li
                     key={v.name}
-                    className="group relative flex flex-col items-center rounded-lg border border-transparent transition hover:border-stone-200 hover:bg-stone-50"
+                    className="group relative flex flex-col items-center rounded-lg border border-transparent transition hover:border-warm-border-strong hover:bg-surface"
                   >
                     <button
                       type="button"
                       onClick={() => setEditingChord(v.name)}
                       aria-label={`Change voicing for ${v.name}`}
-                      className="flex w-full cursor-pointer flex-col items-center gap-1 rounded-lg py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+                      className="flex w-full cursor-pointer flex-col items-center gap-1 rounded-lg py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
                     >
-                      <span className="text-xs font-medium text-stone-900 group-hover:text-amber-700">
+                      <span className="rounded-xs px-1 text-xs font-semibold text-primary group-hover:bg-honey/25">
                         {prettyAccidentals(v.name)}
                       </span>
-                      <FretboardSvg voicing={v} size="compact" scale={1.2} unit="px" color="#44403c" />
-                      <span className="font-mono text-[10px] text-stone-400">
+                      <FretboardSvg
+                        voicing={v}
+                        size="compact"
+                        scale={1.2}
+                        unit="px"
+                        color="#1A382B"
+                      />
+                      <span className="font-mono text-[10px] text-muted">
                         {fretsToString(v.frets)}
                       </span>
                     </button>
@@ -366,7 +377,7 @@ export function ChordFlowWorkspace() {
                         type="button"
                         aria-label={`Reset ${v.name}`}
                         onClick={() => removeCustomOverride(v.name)}
-                        className="absolute top-1 right-1 rounded p-0.5 text-stone-400 opacity-0 group-hover:opacity-100 hover:text-stone-900 focus-visible:opacity-100"
+                        className="absolute top-1 right-1 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-sage hover:text-primary focus-visible:opacity-100"
                       >
                         <X className="h-3 w-3" aria-hidden="true" />
                       </button>
@@ -415,13 +426,13 @@ export function ChordFlowWorkspace() {
               <button
                 type="submit"
                 aria-label="Add voicing"
-                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-stone-200 px-3 text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-surface px-3 text-primary transition hover:border-primary/50 hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </button>
             </form>
             {overrideError && (
-              <p role="alert" className="text-xs text-red-600">
+              <p role="alert" className="text-xs font-medium text-red-700">
                 {overrideError}
               </p>
             )}

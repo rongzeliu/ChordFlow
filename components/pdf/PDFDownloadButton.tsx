@@ -35,7 +35,7 @@ export function PDFDownloadButton(props: SongPDFDocumentProps) {
       type="button"
       onClick={handleDownload}
       disabled={compiling}
-      className="inline-flex h-9 items-center gap-2 rounded-lg bg-stone-900 px-4 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-60"
+      className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-medium text-base shadow-[0_1px_2px_rgba(26,56,43,0.16)] transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60"
     >
       {compiling ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

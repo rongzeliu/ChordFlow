@@ -154,21 +154,21 @@ export function ExportPreviewDialog({
       ref={dialogRef}
       aria-labelledby={titleId}
       {...({ closedby: 'any' } as Record<string, string>)}
-      className="export-preview-dialog m-auto w-full max-w-5xl rounded-2xl border border-stone-200 bg-white p-0 text-stone-900 shadow-2xl backdrop:bg-stone-950/50 backdrop:backdrop-blur-[1px]"
+      className="export-preview-dialog m-auto w-full max-w-5xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] backdrop:bg-primary/45 backdrop:backdrop-blur-[1px]"
     >
       {open && (
-        <div className="flex max-h-[90dvh] flex-col print:max-h-none print:block">
+        <div className="flex max-h-[90dvh] flex-col print:block print:max-h-none">
           {/* Header (hidden when printing natively) */}
-          <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4 print:hidden">
+          <div className="flex items-center justify-between border-b border-warm-border bg-base px-6 py-4 print:hidden">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-honey/30 text-primary">
                 <FileText className="h-4 w-4" aria-hidden="true" />
               </div>
               <div>
-                <h2 id={titleId} className="text-base font-semibold tracking-tight text-stone-900">
+                <h2 id={titleId} className="text-base font-semibold tracking-tight text-primary">
                   Export &amp; Print Preview
                 </h2>
-                <p className="text-xs text-stone-500">
+                <p className="text-xs text-muted">
                   Adjust paper size and download settings or print directly from your browser.
                 </p>
               </div>
@@ -179,7 +179,7 @@ export function ExportPreviewDialog({
                 type="submit"
                 value="cancel"
                 aria-label="Close export preview"
-                className="rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+                className="rounded-lg p-1.5 text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -187,7 +187,7 @@ export function ExportPreviewDialog({
           </div>
 
           {/* Export Size & Formatting Controls Bar (hidden when printing natively) */}
-          <div className="grid grid-cols-1 gap-4 border-b border-stone-200 bg-stone-50/80 px-6 py-3.5 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+          <div className="grid grid-cols-1 gap-4 border-b border-warm-border bg-base/80 px-6 py-3.5 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
             <Segmented<PageSize>
               label="Paper size"
               value={pageSize}
@@ -232,13 +232,13 @@ export function ExportPreviewDialog({
                 step={0.05}
                 value={scale}
                 onChange={(e) => onChangeScale(parseFloat(e.target.value))}
-                className="h-[34px] w-full accent-amber-600"
+                className="h-[34px] w-full accent-forest"
               />
             </Field>
           </div>
 
           {/* Scrollable Sheet Preview Area */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-stone-200/70 px-6 py-8 sm:px-10 print:overflow-visible print:bg-white print:p-0">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-canvas px-6 py-8 sm:px-10 print:overflow-visible print:bg-surface print:p-0">
             <SheetPreview
               song={song}
               preset={preset}
@@ -252,8 +252,8 @@ export function ExportPreviewDialog({
           </div>
 
           {/* Footer Actions (hidden when printing natively) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 bg-white px-6 py-4 print:hidden">
-            <p className="text-xs text-stone-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-warm-border bg-base px-6 py-4 print:hidden">
+            <p className="text-xs font-medium text-muted">
               {pageSize === 'A4' ? 'A4 (210 × 297 mm)' : 'US Letter (8.5 × 11 in)'} ·{' '}
               {diagramSize === 'compact' ? 'Compact diagrams' : 'Standard diagrams'} ·{' '}
               {Math.round(scale * 100)}% scale
@@ -263,9 +263,9 @@ export function ExportPreviewDialog({
               <button
                 type="button"
                 onClick={handleNativePrint}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-stone-200 bg-white px-4 text-xs font-medium text-stone-700 transition hover:bg-stone-50 hover:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-primary/25 bg-surface px-4 text-xs font-medium text-primary transition hover:border-primary/50 hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
               >
-                <Printer className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+                <Printer className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
                 <span>Print…</span>
               </button>
 
@@ -274,7 +274,7 @@ export function ExportPreviewDialog({
                 autoFocus
                 onClick={handleDownloadPDF}
                 disabled={compiling}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-stone-900 px-4 text-xs font-medium text-white shadow-2xs transition hover:bg-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 disabled:cursor-wait disabled:opacity-60"
+                className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-medium text-base shadow-[0_1px_2px_rgba(26,56,43,0.16)] transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60"
               >
                 {compiling ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+:root {
+  --bg-base: #fafaf7;
+  --bg-canvas: #f2f4ef;
+  --bg-surface: #ffffff;
+  --bg-sage: #f0f4f1;
+  --bg-sage-strong: #e2eae4;
+  --text-primary: #1a382b;
+  --text-primary-hover: #12281e;
+  --text-muted: #4a5d52;
+  --text-subtle: #6b7d72;
+  --accent-forest: #1a382b;
+  --accent-honey: #e8a838;
+  --accent-honey-deep: #d99b26;
+  --bg-honey-tint: #fdf6e7;
+  --border-warm: #e6e8e3;
+  --border-warm-strong: #cfd6d0;
+}
+
+@theme {
+  --color-base: var(--bg-base);
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-sage: var(--bg-sage);
+  --color-sage-strong: var(--bg-sage-strong);
+  --color-primary: var(--text-primary);
+  --color-primary-hover: var(--text-primary-hover);
+  --color-forest: var(--accent-forest);
+  --color-forest-deep: var(--text-primary-hover);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-honey: var(--accent-honey);
+  --color-honey-deep: var(--accent-honey-deep);
+  --color-honey-tint: var(--bg-honey-tint);
+  --color-warm-border: var(--border-warm);
+  --color-warm-border-strong: var(--border-warm-strong);
+}
+
 @layer base {
   html,
   body {
@@ -11,8 +48,8 @@
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #f5f5f4;
-    color: #1c1917;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
   }
 
   dialog:modal {

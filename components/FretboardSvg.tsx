@@ -19,7 +19,7 @@ export function FretboardSvg({
   size = 'compact',
   scale = 1,
   unit = 'pt',
-  color = '#1c1917',
+  color = '#1A382B',
   className,
 }: FretboardSvgProps) {
   const g = buildFretboardGeometry(voicing, size);
