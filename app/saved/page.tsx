@@ -212,7 +212,7 @@ export default function SavedSongsPage() {
                         >
                           <span>{song.title}</span>
                           {isCurrent && (
-                            <span className="rounded-full border border-honey/60 bg-honey/30 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                            <span className="shrink-0 rounded-full border border-primary/25 bg-sage px-2 py-0.5 text-[10px] font-semibold text-primary">
                               Current
                             </span>
                           )}
