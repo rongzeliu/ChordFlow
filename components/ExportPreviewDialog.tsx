@@ -240,6 +240,7 @@ export function ExportPreviewDialog({
           {/* Scrollable Sheet Preview Area */}
           <div className="min-h-0 flex-1 overflow-y-auto bg-canvas px-6 py-8 sm:px-10 print:overflow-visible print:bg-surface print:p-0">
             <SheetPreview
+              key={`${preset}-${diagramSize}-${pageSize}`}
               song={song}
               preset={preset}
               diagramSize={diagramSize}

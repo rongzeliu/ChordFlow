@@ -78,6 +78,7 @@ export function ChordFlowWorkspace() {
   } = useChordFlowStore();
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const previewMainRef = useRef<HTMLElement | null>(null);
   const [newChordName, setNewChordName] = useState('');
   const [newChordFrets, setNewChordFrets] = useState('');
   const [overrideError, setOverrideError] = useState<string | null>(null);
@@ -107,6 +108,17 @@ export function ChordFlowWorkspace() {
     el.style.height = 'auto';
     el.style.height = `${Math.min(340, Math.max(200, el.scrollHeight))}px`;
   }, [rawInput]);
+
+  // Reload the sheet preview cleanly inside its own scroll pane when diagram size or layout changes,
+  // ensuring the outer document never shifts or locks at an offset.
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    }
+    previewMainRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+  }, [diagramSize, preset, pageSize]);
 
   const baseParsedSong = useMemo(() => parseSong(rawInput), [rawInput]);
 
@@ -483,30 +495,38 @@ export function ChordFlowWorkspace() {
           </SidebarSection>
 
           <SidebarSection title="Layout">
-            <fieldset>
-              <legend className="sr-only">Layout preset</legend>
-              <div className="space-y-1.5">
-                {PRESETS.map((p) => (
-                  <label
+            <div role="radiogroup" aria-label="Layout preset" className="space-y-1.5">
+              {PRESETS.map((p) => {
+                const checked = preset === p.id;
+                return (
+                  <button
                     key={p.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors hover:bg-sage/70 has-[:checked]:border-honey/60 has-[:checked]:bg-honey-tint has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-honey"
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    onClick={() => setPreset(p.id)}
+                    className={`flex w-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-honey focus-visible:outline-none ${
+                      checked
+                        ? 'border-honey/60 bg-honey-tint'
+                        : 'border-transparent hover:bg-sage/70'
+                    }`}
                   >
-                    <input
-                      type="radio"
-                      name="preset"
-                      value={p.id}
-                      checked={preset === p.id}
-                      onChange={() => setPreset(p.id)}
-                      className="mt-0.5 accent-forest"
-                    />
+                    <span
+                      aria-hidden="true"
+                      className={`mt-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
+                        checked ? 'border-primary bg-primary' : 'border-muted bg-surface'
+                      }`}
+                    >
+                      {checked && <span className="h-1.5 w-1.5 rounded-full bg-base" />}
+                    </span>
                     <span>
                       <span className="block text-sm font-medium text-primary">{p.title}</span>
                       <span className="block text-xs text-muted">{p.description}</span>
                     </span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+                  </button>
+                );
+              })}
+            </div>
           </SidebarSection>
 
           <SidebarSection title="Options">
@@ -685,11 +705,13 @@ export function ChordFlowWorkspace() {
 
         {/* Preview canvas */}
         <main
+          ref={previewMainRef}
           className={`min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-10 lg:px-16 lg:py-12 ${
             exportOpen ? 'print:hidden' : 'print:overflow-visible print:p-0'
           }`}
         >
           <SheetPreview
+            key={`${preset}-${diagramSize}-${pageSize}`}
             song={parsedSong}
             preset={preset}
             diagramSize={diagramSize}
