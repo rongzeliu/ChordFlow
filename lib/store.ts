@@ -51,6 +51,13 @@ interface ChordFlowState {
   savedSongs: SavedSong[];
 
   setRawInput: (rawInput: string) => void;
+  /** Atomically replaces the current song input and syncs capo/overrides (used by URL importer & undo). */
+  applyImportedSong: (payload: {
+    formattedText: string;
+    capo?: number | null;
+    customOverrides?: Record<string, string>;
+    activeSavedSongId?: string | null;
+  }) => void;
   loadTemplate: (templateId: string) => void;
   setPreset: (preset: LayoutPreset) => void;
   setDiagramSize: (diagramSize: DiagramSize) => void;
@@ -133,6 +140,14 @@ export const useChordFlowStore = create<ChordFlowState>()(
 
       setRawInput: (rawInput) =>
         set({ rawInput, activeTemplateId: 'custom', activeSavedSongId: null }),
+      applyImportedSong: ({ formattedText, capo = null, customOverrides = {}, activeSavedSongId = null }) =>
+        set({
+          rawInput: formattedText,
+          activeTemplateId: 'imported',
+          activeSavedSongId,
+          capoOverride: capo,
+          customOverrides,
+        }),
       loadTemplate: (templateId) => {
         const tpl = SONG_TEMPLATES.find((t) => t.id === templateId);
         if (!tpl) return;

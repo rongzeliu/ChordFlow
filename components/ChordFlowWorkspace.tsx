@@ -3,9 +3,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { Bookmark, Check, Download, Guitar, Library, Plus, X } from 'lucide-react';
+import {
+  Bookmark,
+  Check,
+  Download,
+  ExternalLink,
+  Guitar,
+  Library,
+  Link2,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import type { DiagramSize, DisplayMode, LayoutPreset } from '@/types/chord';
 import { resolveVoicing } from '@/lib/chordLibrary';
+import {
+  cleanRawPastedText,
+  detectSupportedImportUrl,
+  hasRawPasteClutter,
+} from '@/lib/importers/textCleaner';
+import type { ImportedSongResponse } from '@/lib/importers/types';
 import { parseSong, parseSongBody } from '@/lib/parser';
 import { computeKeyInfo } from '@/lib/sheet';
 import {
@@ -36,6 +55,7 @@ const PRESETS: { id: LayoutPreset; title: string; description: string }[] = [
 export function ChordFlowWorkspace() {
   const {
     rawInput,
+    activeSavedSongId,
     preset,
     diagramSize,
     displayMode,
@@ -45,6 +65,7 @@ export function ChordFlowWorkspace() {
     customOverrides,
     savedSongs,
     setRawInput,
+    applyImportedSong,
     setPreset,
     setDiagramSize,
     setDisplayMode,
@@ -63,6 +84,21 @@ export function ChordFlowWorkspace() {
   const [justSaved, setJustSaved] = useState(false);
   const [editingChord, setEditingChord] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+
+  // URL Importer & Raw-Paste Cleaner state
+  const [importUrl, setImportUrl] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importedMeta, setImportedMeta] = useState<{
+    provider: ImportedSongResponse['provider'];
+    sourceUrl: string;
+  } | null>(null);
+  const [undoSnapshot, setUndoSnapshot] = useState<{
+    rawInput: string;
+    capoOverride: number | null;
+    customOverrides: Record<string, string>;
+    activeSavedSongId: string | null;
+  } | null>(null);
 
   // Grow the editor with its content, within sensible bounds so Layout & Options stay reachable.
   useEffect(() => {
@@ -138,6 +174,105 @@ export function ChordFlowWorkspace() {
     setOverrideError(null);
   };
 
+  const performUrlImport = async (targetUrl: string) => {
+    const trimmed = targetUrl.trim();
+    if (!trimmed) {
+      setImportError('Paste a PNW Chords or Ultimate Guitar song link first.');
+      return;
+    }
+    const detected = detectSupportedImportUrl(trimmed);
+    if (!detected) {
+      setImportError(
+        'Unsupported link. Please paste a song URL from pnwchords.com or ultimate-guitar.com.',
+      );
+      return;
+    }
+
+    try {
+      setIsImporting(true);
+      setImportError(null);
+      const res = await fetch('/api/import-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: detected.url }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Partial<ImportedSongResponse> & {
+        error?: string;
+      };
+      if (!res.ok || !data.formattedText) {
+        setImportError(
+          data.error ||
+            'Could not import that link automatically. Copy the page text (Cmd+A / Ctrl+A) into the Song box below and click "Clean & Format Pasted Text".',
+        );
+        return;
+      }
+
+      setUndoSnapshot({
+        rawInput,
+        capoOverride,
+        customOverrides: { ...customOverrides },
+        activeSavedSongId,
+      });
+      applyImportedSong({
+        formattedText: data.formattedText,
+        capo: typeof data.capo === 'number' ? data.capo : 0,
+      });
+      setImportedMeta({
+        provider: data.provider ?? detected.provider,
+        sourceUrl: data.sourceUrl ?? detected.url,
+      });
+      setImportUrl('');
+    } catch {
+      setImportError(
+        'Network error while importing link. You can paste the copied page text below and click "Clean & Format Pasted Text".',
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleImportSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void performUrlImport(importUrl);
+  };
+
+  const handleCleanPastedText = () => {
+    setUndoSnapshot({
+      rawInput,
+      capoOverride,
+      customOverrides: { ...customOverrides },
+      activeSavedSongId,
+    });
+    const cleaned = cleanRawPastedText(rawInput, importedMeta?.sourceUrl);
+    applyImportedSong({
+      formattedText: cleaned.formattedText,
+      capo: typeof cleaned.capo === 'number' ? cleaned.capo : 0,
+    });
+    setImportError(null);
+  };
+
+  const handleUndoImport = () => {
+    if (!undoSnapshot) return;
+    applyImportedSong({
+      formattedText: undoSnapshot.rawInput,
+      capo: undoSnapshot.capoOverride,
+      customOverrides: undoSnapshot.customOverrides,
+      activeSavedSongId: undoSnapshot.activeSavedSongId,
+    });
+    setUndoSnapshot(null);
+    setImportedMeta(null);
+    setImportError(null);
+  };
+
+  const detectedRawUrlInEditor = useMemo(
+    () => detectSupportedImportUrl(rawInput.trim()),
+    [rawInput],
+  );
+  const showRawPasteCleaner = useMemo(
+    () => Boolean(importError || hasRawPasteClutter(rawInput)),
+    [importError, rawInput],
+  );
+
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-canvas text-primary print:static print:h-auto print:overflow-visible print:bg-surface">
       {/* Header */}
@@ -193,7 +328,122 @@ export function ChordFlowWorkspace() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row print:block print:overflow-visible">
         {/* Sidebar — wider with comfortable side gutter so scrolling happens smoothly outside the lyrics textarea */}
         <aside className="min-h-0 shrink-0 divide-y divide-warm-border overflow-y-auto border-warm-border bg-base lg:w-[468px] lg:border-r print:hidden">
-          <SidebarSection title="Song">
+          <SidebarSection
+            title="Song"
+            action={
+              undoSnapshot ? (
+                <button
+                  type="button"
+                  onClick={handleUndoImport}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
+                >
+                  <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                  <span>Undo import</span>
+                </button>
+              ) : null
+            }
+          >
+            {/* URL Import Bar */}
+            <form onSubmit={handleImportSubmit} className="space-y-2 pr-3">
+              <label htmlFor="song-import-url" className="sr-only">
+                Paste PNW Chords or Ultimate Guitar link to import and format
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Link2
+                    className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+                    aria-hidden="true"
+                  />
+                  <input
+                    id="song-import-url"
+                    type="url"
+                    value={importUrl}
+                    onChange={(e) => {
+                      setImportUrl(e.target.value);
+                      if (importError) setImportError(null);
+                    }}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData('text').trim();
+                      if (detectSupportedImportUrl(pasted)) {
+                        e.preventDefault();
+                        setImportUrl(pasted);
+                        void performUrlImport(pasted);
+                      }
+                    }}
+                    placeholder="Paste PNW Chords or Ultimate Guitar link…"
+                    className={`${inputClass} py-1.5 pr-2.5 pl-8 text-xs`}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isImporting}
+                  className="inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-base transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      <span>Importing…</span>
+                    </>
+                  ) : (
+                    <span>Import</span>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Imported Provider Status Pill */}
+            {importedMeta && (
+              <div className="mr-3 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-sage px-3 py-1.5 text-xs text-primary">
+                <span className="font-medium">
+                  Imported from{' '}
+                  {importedMeta.provider === 'pnwchords' ? 'PNW Chords' : 'Ultimate Guitar'}
+                </span>
+                <a
+                  href={importedMeta.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-primary underline decoration-honey decoration-2 underline-offset-2 hover:text-primary-hover"
+                >
+                  <span>Source</span>
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
+              </div>
+            )}
+
+            {/* One-click import prompt if user pasted a URL straight into the main textarea */}
+            {detectedRawUrlInEditor && !isImporting && (
+              <div className="mr-3 flex items-center justify-between gap-2 rounded-lg border border-honey/60 bg-honey-tint px-3 py-2 text-xs text-primary">
+                <span>Detected song link in editor.</span>
+                <button
+                  type="button"
+                  onClick={() => void performUrlImport(detectedRawUrlInEditor.url)}
+                  className="rounded-md bg-primary px-2.5 py-1 font-medium text-base hover:bg-primary-hover"
+                >
+                  Import &amp; Format
+                </button>
+              </div>
+            )}
+
+            {/* Dismissible Import Error Alert + Raw Paste Cleaner Fallback */}
+            {importError && (
+              <div
+                role="alert"
+                className="mr-3 space-y-2 rounded-lg border border-honey-deep/50 bg-honey-tint p-3 text-xs text-primary"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="leading-relaxed font-medium">{importError}</p>
+                  <button
+                    type="button"
+                    onClick={() => setImportError(null)}
+                    aria-label="Dismiss import alert"
+                    className="rounded p-0.5 text-muted hover:bg-sage hover:text-primary"
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="pr-3">
               <textarea
                 id="song-sheet-input"
@@ -205,10 +455,24 @@ export function ChordFlowWorkspace() {
                 spellCheck={false}
                 autoCorrect="off"
                 autoCapitalize="off"
-                placeholder="Paste an Ultimate Guitar chord sheet or ChordPro…"
+                placeholder="Paste an Ultimate Guitar or PNW Chords sheet, or ChordPro…"
                 className={`${inputClass} resize-y font-mono text-xs leading-relaxed`}
               />
             </div>
+
+            {showRawPasteCleaner && (
+              <div className="pr-3">
+                <button
+                  type="button"
+                  onClick={handleCleanPastedText}
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/25 bg-sage px-3 py-2 text-xs font-semibold text-primary transition hover:border-primary/50 hover:bg-sage-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                  <span>Clean &amp; Format Pasted Text</span>
+                </button>
+              </div>
+            )}
+
             <p id="song-sheet-hint" className="text-xs leading-relaxed text-muted">
               Define custom shapes like{' '}
               <code className="rounded bg-sage px-1 py-0.5 font-mono text-primary">

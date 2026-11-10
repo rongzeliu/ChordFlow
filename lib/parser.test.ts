@@ -15,6 +15,9 @@ import { getVoicingCandidates } from './chordLibrary';
 import { calculateCapoForKey, transposeChord, transposeKey } from './music';
 import { planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
+import { parsePnwChordsHtml } from './importers/pnwChords';
+import { cleanRawPastedText, detectSupportedImportUrl } from './importers/textCleaner';
+import { parseUltimateGuitarHtml } from './importers/ultimateGuitar';
 import { SongPDFDocument } from '@/components/pdf/SongPDFDocument';
 
 describe('voicing & fret string parsing', () => {
@@ -244,5 +247,130 @@ D/F#* = 200233
       expect(buf.byteLength).toBeGreaterThan(1500);
       expect(buf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
     }
+  });
+});
+
+describe('URL chord importers (PNW Chords & Ultimate Guitar)', () => {
+  it('validates supported PNW Chords and Ultimate Guitar URLs', () => {
+    expect(
+      detectSupportedImportUrl('https://pnwchords.com/jesus-be-the-name-elevation-worship/'),
+    ).toEqual({
+      url: 'https://pnwchords.com/jesus-be-the-name-elevation-worship/',
+      provider: 'pnwchords',
+    });
+    expect(
+      detectSupportedImportUrl('https://tabs.ultimate-guitar.com/tab/jeff-buckley/hallelujah-chords-198052'),
+    ).toEqual({
+      url: 'https://tabs.ultimate-guitar.com/tab/jeff-buckley/hallelujah-chords-198052',
+      provider: 'ultimate-guitar',
+    });
+    expect(detectSupportedImportUrl('https://example.com/song')).toBeNull();
+  });
+
+  it('extracts PNW Chords title, artist, data-key, normalized section headers, and aligned chords', () => {
+    const sampleHtml = `
+      <html>
+        <head><title>Jesus Be The Name - Elevation Worship - pnwchords</title></head>
+        <body>
+          <div>Font Print Dark view_moduleSplit AbAA#BbBCC#DbDD#EbEFF#GbGG#</div>
+          <pre data-key="D">Verse1
+D        A/C#      G
+I could sing Your Name for all my life
+
+Chorus
+                                  Em
+There's just something 'bout Your Name
+
+Bridge2
+             Em                 G
+Jesus be the Name, Jesus be the Name</pre>
+          <div class="lyrics-only">Duplicate lyrics tab ignored</div>
+        </body>
+      </html>
+    `;
+    const res = parsePnwChordsHtml(
+      sampleHtml,
+      'https://pnwchords.com/jesus-be-the-name-elevation-worship/',
+    );
+    expect(res.title).toBe('Jesus Be The Name');
+    expect(res.artist).toBe('Elevation Worship');
+    expect(res.key).toBe('D');
+    expect(res.capo).toBe(0);
+    expect(res.formattedText).toContain('Title: Jesus Be The Name');
+    expect(res.formattedText).toContain('Artist: Elevation Worship');
+    expect(res.formattedText).toContain('[Verse 1]');
+    expect(res.formattedText).toContain('[Chorus]');
+    expect(res.formattedText).toContain('[Bridge 2]');
+    expect(res.formattedText).not.toContain('Duplicate lyrics tab');
+  });
+
+  it('extracts Ultimate Guitar .js-store JSON and strips [tab]/[ch] while preserving column alignment', () => {
+    const storePayload = {
+      store: {
+        page: {
+          data: {
+            tab: {
+              song_name: 'Hallelujah',
+              artist_name: 'Jeff Buckley',
+              tonality_name: 'Db',
+            },
+            tab_view: {
+              meta: {
+                tonality: 'Db',
+                capo: 1,
+                tuning: { value: 'E A D G B E' },
+              },
+              wiki_tab: {
+                content:
+                  '[Intro]\r\n[ch]C[/ch] [ch]Am[/ch] [ch]C[/ch] [ch]Am[/ch]\r\n\r\n[Verse 1]\r\n[tab]  [ch]C[/ch]                 [ch]Am[/ch]\r\nI heard there was a secret chord[/tab]',
+              },
+            },
+          },
+        },
+      },
+    };
+    const encoded = JSON.stringify(storePayload)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;');
+    const html = `<div class="js-store" data-content="${encoded}"></div>`;
+
+    const res = parseUltimateGuitarHtml(
+      html,
+      'https://tabs.ultimate-guitar.com/tab/jeff-buckley/hallelujah-chords-198052',
+    );
+    expect(res.title).toBe('Hallelujah');
+    expect(res.artist).toBe('Jeff Buckley');
+    expect(res.key).toBe('C'); // Shape key C + Capo 1 -> Concert Key Db
+    expect(res.capo).toBe(1);
+    expect(res.formattedText).toContain('  C                 Am\nI heard there was a secret chord');
+
+    const parsed = parseSong(res.formattedText);
+    const plan = planSheet(parsed, {
+      preset: 'first_occurrence_only',
+      diagramScope: 'all',
+      displayMode: 'shapes',
+      capo: res.capo ?? 0,
+    });
+    expect(plan.keyInfo.summary).toBe('Capo 1: C Shapes / Concert Key: Db');
+  });
+
+  it('cleans raw copy-pasted PNW Chords text with UI noise and unbracketed section labels', () => {
+    const rawPaste = `Jesus Be The Name - Elevation Worship - pnwchords
+Font Print Dark
+view_moduleSplit
+AbAA#BbBCC#DbDD#EbEFF#GbGG#
+🎵 Simple🎶 Advanced
+Verse1
+D        A/C#      G
+I could sing Your Name for all my life
+Leave a Reply
+Your email address will not be published.`;
+
+    const cleaned = cleanRawPastedText(rawPaste);
+    expect(cleaned.title).toBe('Jesus Be The Name');
+    expect(cleaned.artist).toBe('Elevation Worship');
+    expect(cleaned.formattedText).toContain('[Verse 1]');
+    expect(cleaned.formattedText).not.toContain('AbAA#Bb');
+    expect(cleaned.formattedText).not.toContain('Leave a Reply');
   });
 });
