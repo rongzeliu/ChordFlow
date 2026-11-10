@@ -15,7 +15,6 @@ import {
   prettyAccidentals,
 } from '@/lib/music';
 import { mergeUserOverrides, useChordFlowStore } from '@/lib/store';
-import { SONG_TEMPLATES } from '@/lib/templates';
 import { fretsToString, parseFretString } from '@/lib/voicing';
 import { ChordVoicingDialog } from './ChordVoicingDialog';
 import { FretboardSvg } from './FretboardSvg';
@@ -37,7 +36,6 @@ const PRESETS: { id: LayoutPreset; title: string; description: string }[] = [
 export function ChordFlowWorkspace() {
   const {
     rawInput,
-    activeTemplateId,
     preset,
     diagramSize,
     displayMode,
@@ -47,7 +45,6 @@ export function ChordFlowWorkspace() {
     customOverrides,
     savedSongs,
     setRawInput,
-    loadTemplate,
     setPreset,
     setDiagramSize,
     setDisplayMode,
@@ -196,24 +193,7 @@ export function ChordFlowWorkspace() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row print:block print:overflow-visible">
         {/* Sidebar — wider with comfortable side gutter so scrolling happens smoothly outside the lyrics textarea */}
         <aside className="min-h-0 shrink-0 divide-y divide-warm-border overflow-y-auto border-warm-border bg-base lg:w-[468px] lg:border-r print:hidden">
-          <SidebarSection
-            title="Song"
-            action={
-              <select
-                aria-label="Load an example song"
-                value={SONG_TEMPLATES.some((t) => t.id === activeTemplateId) ? activeTemplateId : ''}
-                onChange={(e) => e.target.value && loadTemplate(e.target.value)}
-                className="rounded-md border-0 bg-transparent py-1 pr-1 text-right text-xs font-medium text-muted hover:text-primary focus:ring-2 focus:ring-honey/50 focus:outline-none"
-              >
-                <option value="">Load example…</option>
-                {SONG_TEMPLATES.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            }
-          >
+          <SidebarSection title="Song">
             <div className="pr-3">
               <textarea
                 id="song-sheet-input"
