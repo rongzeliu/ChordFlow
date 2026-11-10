@@ -209,7 +209,7 @@ export default function SavedSongsPage() {
                           <span>{song.title}</span>
                           {isCurrent && (
                             <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                              Active
+                              Current
                             </span>
                           )}
                         </button>
