@@ -2,8 +2,8 @@
  * Renderer-agnostic fretboard geometry. Both the DOM <svg> component and the @react-pdf/renderer
  * <Svg> component consume these primitives, guaranteeing identical diagrams on screen and in print.
  *
- * Grid (viewBox units): 6 strings from x = 15 to x = 85 (dx = 14); fret lines from y = 25 to
- * y = 105. A double-thick nut is drawn at y = 25 for open-position voicings, otherwise a
+ * Grid (viewBox units): 6 strings from x = 15 to x = 85 (dx = 14, center = 50); fret lines from
+ * y = 25 to y = 105. A double-thick nut is drawn at y = 25 for open-position voicings, otherwise a
  * "{baseFret}fr" label sits beside the first fret space. × / ○ markers sit at y = 15.
  */
 import type { ChordVoicing, DiagramSize } from '@/types/chord';
@@ -16,13 +16,17 @@ export const GRID = {
   top: 25,
   bottom: 105,
   markerY: 15,
-  /** viewBox starts left of 0 so large "7fr" / "12fr" labels are never clipped. */
-  originX: -28,
-  width: 128,
+  /**
+   * Symmetric viewBox around x = 50 (the center of strings 15..85):
+   * [-25 .. 125] has width 150 and midpoint 50, keeping the fretboard grid dead-center
+   * while leaving ample room on the left for bold "7fr" / "12fr" fret position labels.
+   */
+  originX: -25,
+  width: 150,
 } as const;
 
 /** Rendered diagram width in pt (PDF and on-screen paper preview), before the scale multiplier. */
-export const DIAGRAM_WIDTH: Record<DiagramSize, number> = { compact: 28, standard: 44 };
+export const DIAGRAM_WIDTH: Record<DiagramSize, number> = { compact: 32, standard: 50 };
 
 export interface Line { x1: number; y1: number; x2: number; y2: number; width: number }
 export interface Dot { cx: number; cy: number; r: number; finger?: number }
@@ -45,7 +49,7 @@ export interface FretboardGeometry {
 
 export const stringX = (i: number) => GRID.left + i * GRID.dx;
 
-export function buildFretboardGeometry(voicing: ChordVoicing, size: DiagramSize = 'compact'): FretboardGeometry {
+export function buildFretboardGeometry(voicing: ChordVoicing, _size: DiagramSize = 'compact'): FretboardGeometry {
   const { frets, baseFret } = voicing;
   const rel = (f: number) => f - baseFret + 1;
   const maxRel = Math.max(0, ...frets.filter((f) => f > 0).map(rel));
@@ -54,8 +58,7 @@ export function buildFretboardGeometry(voicing: ChordVoicing, size: DiagramSize 
   const fretY = (i: number) => GRID.top + i * dy;
   const r = Math.min(6, dy * 0.34);
 
-  const showFingers = size === 'standard' && !!voicing.fingers?.some((f) => f > 0);
-  const height = showFingers ? 122 : 112;
+  const height = 112;
 
   const strings: Line[] = frets.map((_, i) => ({
     x1: stringX(i), y1: GRID.top, x2: stringX(i), y2: GRID.bottom, width: 1.2,
@@ -103,14 +106,6 @@ export function buildFretboardGeometry(voicing: ChordVoicing, size: DiagramSize 
     const x1 = stringX(barre.fromString) - r;
     const x2 = stringX(barre.toString) + r;
     geometry.barre = { x: x1, y: cy - r, width: x2 - x1, height: 2 * r, rx: r };
-  }
-
-  if (showFingers) {
-    voicing.fingers!.forEach((finger, i) => {
-      if (finger > 0) {
-        geometry.fingerLabels.push({ x: stringX(i), y: 118, text: String(finger), fontSize: 9, anchor: 'middle' });
-      }
-    });
   }
 
   return geometry;

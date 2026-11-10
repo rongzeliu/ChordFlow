@@ -26,7 +26,7 @@ interface ChordVoicingDialogProps {
 const SOURCE_BADGE: Record<VoicingCandidate['source'], string> = {
   song: 'Song Default',
   truefire: 'TrueFire Chart',
-  'chords-db': 'All-Guitar-Chords DB',
+  'chords-db': 'Guitar Chords DB',
   caged: 'CAGED Movable',
 };
 
@@ -146,18 +146,12 @@ export function ChordVoicingDialog({
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-honey/30 text-primary">
                 <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
               </div>
-              <div>
-                <h2 id={titleId} className="text-base font-semibold tracking-tight text-primary">
-                  Choose voicing for{' '}
-                  <span className="rounded bg-honey/30 px-1.5 py-0.5 text-primary">
-                    {prettyAccidentals(chordName)}
-                  </span>
-                </h2>
-                <p className="mt-0.5 text-xs text-muted">
-                  Select a position from the chord database ({candidates.length}{' '}
-                  {candidates.length === 1 ? 'shape' : 'shapes'} available) or enter custom frets.
-                </p>
-              </div>
+              <h2 id={titleId} className="text-base font-semibold tracking-tight text-primary">
+                Choose voicing for{' '}
+                <span className="rounded bg-honey/30 px-1.5 py-0.5 text-primary">
+                  {prettyAccidentals(chordName)}
+                </span>
+              </h2>
             </div>
 
             <div className="flex items-center gap-2">
@@ -197,7 +191,7 @@ export function ChordVoicingDialog({
                       type="button"
                       autoFocus={index === 0}
                       onClick={() => handleChooseCandidate(cand)}
-                      className={`group relative flex flex-col items-center rounded-xl border p-3.5 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey ${
+                      className={`group relative flex flex-col items-center justify-between rounded-xl border px-3 py-3.5 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey ${
                         isSelected
                           ? 'border-honey bg-honey-tint ring-1 ring-honey/50'
                           : 'border-warm-border bg-surface hover:border-warm-border-strong hover:bg-base'
@@ -212,25 +206,22 @@ export function ChordVoicingDialog({
                         </span>
                       )}
 
-                      <span className="mb-1 rounded bg-sage px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-muted uppercase">
+                      <span className="max-w-full truncate rounded bg-sage px-2 py-0.5 text-[10px] font-semibold tracking-wider whitespace-nowrap text-muted uppercase">
                         {SOURCE_BADGE[cand.source]}
                       </span>
 
-                      <div className="my-1.5 flex items-center justify-center">
+                      <div className="my-2 flex w-full items-center justify-center">
                         <FretboardSvg
                           voicing={cand.voicing}
                           size="standard"
-                          scale={1.45}
+                          scale={1.35}
                           unit="px"
                           color="#1A382B"
                         />
                       </div>
 
-                      <span className="mt-1 font-mono text-sm font-bold tracking-wide text-primary">
+                      <span className="font-mono text-sm font-bold tracking-wide text-primary">
                         {sig}
-                      </span>
-                      <span className="mt-0.5 line-clamp-1 text-[11px] text-muted">
-                        {cand.label}
                       </span>
                     </button>
                   );
