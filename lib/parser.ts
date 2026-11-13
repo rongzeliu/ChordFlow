@@ -38,7 +38,7 @@ const SECTION_PLAIN_RE = new RegExp(
 );
 
 /** Tokens allowed on a chord line that are not chords (bar lines, repeat marks, N.C., ...). */
-const IGNORABLE_RE = /^(?:\|+:?|:?\|+|x\d+|\d+x|\(x?\d+x?\)|\(|\)|-+|\/+|N\.?C\.?|%|\.+|~+|>+|→|\[|\]|\*)$/i;
+const IGNORABLE_RE = /^(?:\|+:?|:?\|+|x\d+|\d+x|\(x?\d+x?\)|\(|\)|[-–—]+|\/+|N\.?C\.?|%|\.+|~+|>+|→|\[|\]|\*)$/i;
 
 const INLINE_CHORD_RE = /\[[^\]]+\]/;
 
@@ -70,13 +70,28 @@ export interface ChordPosition {
   col: number;
 }
 
-/** Returns chord names + character columns if every token on the line is a chord (or ignorable). */
+/** Returns chord names + character columns if every token on the line is a chord (or ignorable/parenthetical note). */
 export function extractChordPositions(line: string): ChordPosition[] | null {
   const out: ChordPosition[] = [];
-  const re = /\S+/g;
+  const re = /\([^)]+\)|\S+/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(line))) {
     const tok = m[0];
+    if (tok.startsWith('(') && tok.endsWith(')') && tok.length > 2) {
+      const inner = tok.slice(1, -1).trim();
+      if (!inner) continue;
+      const innerParts = inner.split(/\s+/);
+      if (innerParts.every((p) => isChord(p))) {
+        let searchFrom = 1;
+        for (const p of innerParts) {
+          const relIdx = tok.indexOf(p, searchFrom);
+          out.push({ chord: p, col: m.index + relIdx });
+          searchFrom = relIdx + p.length;
+        }
+      }
+      // Otherwise it's a parenthetical performance note like "(for 4 measures)", "(2x)", or "(hold)"
+      continue;
+    }
     if (IGNORABLE_RE.test(tok)) continue;
     const lead = /^[|(\[]*/.exec(tok)![0].length;
     const core = tok.slice(lead).replace(/[|)\],]+$/, '');
@@ -89,14 +104,84 @@ export function extractChordPositions(line: string): ChordPosition[] | null {
   return out.length ? out : null;
 }
 
-export function detectSection(line: string): string | null {
-  const bracket = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+/** Whether a chord line contains inline parenthetical performance notes like `(for 4 measures)` or `(2x)`. */
+function hasParentheticalNotes(line: string): boolean {
+  const re = /\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line))) {
+    const inner = m[1].trim();
+    if (!inner) continue;
+    const innerParts = inner.split(/\s+/);
+    if (!innerParts.every((p) => isChord(p))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Tokenizes a standalone chord line, preserving inline parenthetical performance notes as lyric tokens. */
+function tokenizeChordLine(line: string, voicings: Map<string, ChordVoicing>): LyricChordToken[] {
+  const tokens: LyricChordToken[] = [];
+  const re = /\([^)]+\)|\S+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line))) {
+    const tok = m[0];
+    if (tok.startsWith('(') && tok.endsWith(')') && tok.length > 2) {
+      const inner = tok.slice(1, -1).trim();
+      if (!inner) continue;
+      const innerParts = inner.split(/\s+/);
+      if (innerParts.every((p) => isChord(p))) {
+        for (const p of innerParts) {
+          tokens.push(chordToken(p, '', voicings));
+        }
+      } else {
+        tokens.push({ type: 'lyric', text: tok });
+      }
+      continue;
+    }
+    if (IGNORABLE_RE.test(tok)) continue;
+    const lead = /^[|(\[]*/.exec(tok)![0].length;
+    const core = tok.slice(lead).replace(/[|)\],]+$/, '');
+    if (core && isChord(core)) {
+      tokens.push(chordToken(core, '', voicings));
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Extracts a section header from a line, supporting both standalone headers (`[Intro]`, `Verse 1:`)
+ * and inline bracketed section prefixes followed by chords or notes (`[Intro] E9 (for 4 measures)`).
+ */
+export function extractSectionPrefix(line: string): { label: string; remainder: string } | null {
+  const bracket = /^\s*\[([^\]]+)\]\s*(.*)$/.exec(line);
   if (bracket) {
     const inner = bracket[1].trim();
-    return isChord(inner) ? null : inner;
+    const remainder = bracket[2].trim();
+    if (!inner || isChord(inner)) return null;
+    if (!remainder) return { label: inner, remainder: '' };
+    if (
+      extractChordPositions(remainder) ||
+      /^\(.*\)$/.test(remainder) ||
+      SECTION_PLAIN_RE.test(inner)
+    ) {
+      return { label: inner, remainder };
+    }
+    return null;
   }
   const plain = SECTION_PLAIN_RE.exec(line);
-  return plain ? plain[1].trim().replace(/^\w/, (c) => c.toUpperCase()) : null;
+  if (plain) {
+    return {
+      label: plain[1].trim().replace(/^\w/, (c) => c.toUpperCase()),
+      remainder: '',
+    };
+  }
+  return null;
+}
+
+export function detectSection(line: string): string | null {
+  const prefix = extractSectionPrefix(line);
+  return prefix ? prefix.label : null;
 }
 
 interface Directive {
@@ -364,7 +449,7 @@ export function parseSongBody(
 
   for (let i = 0; i < lines.length; i++) {
     if (consumed.has(i)) continue;
-    const line = lines[i];
+    let line = lines[i];
     if (!line.trim()) {
       pushBlank();
       continue;
@@ -388,11 +473,21 @@ export function parseSongBody(
 
     if (detectMetadata(line, i === firstIdx)) continue;
 
-    const section = detectSection(line);
-    if (section) {
+    let hadInlineSectionPrefix = false;
+    const sectionPrefix = extractSectionPrefix(line);
+    if (sectionPrefix) {
       pushBlank();
-      out.push({ type: 'section_header', rawText: line, label: section, tokens: [] });
-      continue;
+      out.push({
+        type: 'section_header',
+        rawText: sectionPrefix.remainder ? `[${sectionPrefix.label}]` : line,
+        label: sectionPrefix.label,
+        tokens: [],
+      });
+      if (!sectionPrefix.remainder) {
+        continue;
+      }
+      line = sectionPrefix.remainder;
+      hadInlineSectionPrefix = true;
     }
 
     if (isTabLine(line)) {
@@ -402,7 +497,12 @@ export function parseSongBody(
 
     const chords = extractChordPositions(line);
     if (chords) {
-      if (isPlainContent(i + 1) && !INLINE_CHORD_RE.test(lines[i + 1])) {
+      if (
+        !hadInlineSectionPrefix &&
+        !hasParentheticalNotes(line) &&
+        isPlainContent(i + 1) &&
+        !INLINE_CHORD_RE.test(lines[i + 1])
+      ) {
         const lyric = lines[i + 1];
         out.push({
           type: 'lyric_line',
@@ -414,7 +514,7 @@ export function parseSongBody(
         out.push({
           type: 'lyric_line',
           rawText: line,
-          tokens: chords.map((c) => chordToken(c.chord, '', voicings)),
+          tokens: tokenizeChordLine(line, voicings),
         });
       }
       continue;

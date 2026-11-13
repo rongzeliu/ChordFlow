@@ -263,28 +263,54 @@ export const SongPDFDocument = ({
             style={line.hasDiagram ? styles.lyricLineWithDiagram : styles.lyricLineContainer}
             wrap={false}
           >
-            {line.tokens.map((token, tIdx) => (
-              <View key={tIdx} style={styles.tokenBox}>
-                {token.label && (
-                  <View style={styles.chordContainer}>
-                    {token.showDiagram && token.voicing && (
-                      <PDFFretboardSvg
-                        voicing={token.voicing}
-                        size={diagramSize}
-                        scale={scale}
-                        color="#292524"
-                      />
-                    )}
-                    <Text style={token.isCustom ? styles.chordTextCustom : styles.chordText}>
-                      {token.label}
-                    </Text>
-                  </View>
-                )}
-                <Text style={styles.lyricText}>
-                  {token.text ? (token.trailingSpace ? `${token.text} ` : token.text) : ' '}
-                </Text>
-              </View>
-            ))}
+            {line.tokens.map((token, tIdx) => {
+              const chordHeaders =
+                token.chords ??
+                (token.label
+                  ? [
+                      {
+                        chord: token.chord ?? token.label,
+                        label: token.label,
+                        isCustom: token.isCustom,
+                        voicing: token.voicing,
+                        showDiagram: token.showDiagram,
+                      },
+                    ]
+                  : []);
+              return (
+                <View key={tIdx} style={styles.tokenBox}>
+                  {chordHeaders.length > 0 && (
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                      {chordHeaders.map((c, cIdx) => (
+                        <View
+                          key={`${c.chord}-${cIdx}`}
+                          style={[
+                            styles.chordContainer,
+                            {
+                              paddingRight:
+                                token.isHyphenated && cIdx === chordHeaders.length - 1 ? 1 : 5,
+                            },
+                          ]}
+                        >
+                          {c.showDiagram && c.voicing && (
+                            <PDFFretboardSvg
+                              voicing={c.voicing}
+                              size={diagramSize}
+                              scale={scale}
+                              color="#292524"
+                            />
+                          )}
+                          <Text style={c.isCustom ? styles.chordTextCustom : styles.chordText}>
+                            {c.label}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <Text style={styles.lyricText}>{token.text || ' '}</Text>
+                </View>
+              );
+            })}
           </View>
         );
       })}

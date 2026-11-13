@@ -327,6 +327,18 @@ const TRUEFIRE_CHART: Record<string, { frets: string; label: string }[]> = {
     { frets: '3-3-0-0-1-3', label: 'TrueFire Chart (Gsus)' },
     { frets: '3-x-0-0-1-3', label: 'Open Gsus4' },
   ],
+  'G|sus2': [
+    { frets: '3-0-0-0-3-3', label: 'Open G2 / Gsus2' },
+    { frets: '3-x-0-2-0-3', label: 'Open Gadd9' },
+  ],
+  'G|sus#4/2': [
+    { frets: '3-x-0-2-0-2', label: 'Open Gsus#4/2 (Lydian)' },
+    { frets: '3-2-0-2-1-3', label: 'Open Gsus#4/2' },
+  ],
+  'G|sus#4': [
+    { frets: '3-x-0-0-2-3', label: 'Open Gsus#4' },
+    { frets: '3-2-0-0-2-3', label: 'Full Open Gsus#4' },
+  ],
 };
 
 /** Popular slash chords with multiple playable options. */
@@ -335,6 +347,10 @@ const SLASH_CHORD_SHAPES: Record<string, { frets: string; label: string }[]> = {
     { frets: '2-0-0-2-3-2', label: 'Open D/F# (Thumb Low E)' },
     { frets: '2-0-0-2-3-3', label: 'Worship Dsus4/F# (3rd-Fret High e)' },
     { frets: '2-x-0-2-3-2', label: 'Muted-A D/F#' },
+  ],
+  'D7/F#': [
+    { frets: '2-x-0-2-1-2', label: 'Open D7/F# (Thumb Low E)' },
+    { frets: '2-0-0-2-1-2', label: 'Full Open D7/F#' },
   ],
   'G/B': [
     { frets: 'x-2-0-0-3-3', label: 'Worship G/B (Double 3rd Fret)' },
@@ -352,6 +368,10 @@ const SLASH_CHORD_SHAPES: Record<string, { frets: string; label: string }[]> = {
   'E/G#': [
     { frets: '4-x-2-4-0-0', label: 'Open-Drone E/G#' },
     { frets: '4-2-2-1-0-0', label: 'Full Open E/G#' },
+  ],
+  'E7/G#': [
+    { frets: '4-x-0-1-0-0', label: 'Open E7/G#' },
+    { frets: '4-2-0-1-0-0', label: 'Full Open E7/G#' },
   ],
   'Am/G': [
     { frets: '3-0-2-2-1-0', label: 'Open Am/G' },
@@ -396,13 +416,35 @@ export function normalizeSuffix(suffix: string): string {
   if (s === '°7') return 'dim7';
   if (s === 'ø' || s === 'ø7') return 'm7b5';
   if (s === '+') return 'aug';
-  if (s === 'sus') return 'sus4';
+  if (s === 'sus' || s === '4' || s === 'add4') return 'sus4';
+  if (s === '2' || s === 'add2') return 'sus2';
+  if (s === '6/9') return '69';
+  if (s === 'm6/9') return 'm69';
   s = s
     .replace(/^M(?=\d)/, 'maj')
     .replace(/^min(?!or)/, 'm')
     .replace(/^mi(?!n)/, 'm')
     .replace(/^-/, 'm');
   return s;
+}
+
+/** Derives a simpler fallback suffix when an extended/altered suffix has no direct library entry. */
+function fallbackSuffix(normSuffix: string): string {
+  if (/^m(?!aj)/.test(normSuffix)) {
+    if (/(?:7|9|11|13)/.test(normSuffix)) return 'm7';
+    if (/6/.test(normSuffix)) return 'm6';
+    return 'm';
+  }
+  if (/maj(?:7|9|11|13)/.test(normSuffix)) return 'maj7';
+  if (/7sus/.test(normSuffix)) return '7sus4';
+  if (/sus#?4\/2|sus2/.test(normSuffix)) return 'sus2';
+  if (/sus/.test(normSuffix)) return 'sus4';
+  if (/add9|add2/.test(normSuffix)) return 'add9';
+  if (/dim/.test(normSuffix)) return 'dim';
+  if (/aug|\+/.test(normSuffix)) return 'aug';
+  if (/(?:7|9|11|13)/.test(normSuffix)) return '7';
+  if (/6/.test(normSuffix)) return '6';
+  return '';
 }
 
 /** Maps a normalized ChordFlow suffix to the `@tombatossals/chords-db` suffix key. */
@@ -573,6 +615,34 @@ export function getVoicingCandidates(
   };
   tryMovable(E_SHAPES[normSuffix], 4, 'E-Shape Barre');
   tryMovable(A_SHAPES[normSuffix], 9, 'A-Shape Barre');
+
+  // 6. Graceful fallback for altered / compound extensions (e.g. Gsus#4/2, C#m7add11)
+  if (out.length === 0) {
+    const fb = fallbackSuffix(normSuffix);
+    const fbTf = TRUEFIRE_CHART[`${canonicalRoot}|${fb}`];
+    if (fbTf) {
+      for (const item of fbTf) {
+        const frets = parseFretString(item.frets);
+        if (frets) pushCandidate(buildVoicing(chordName, frets, false), item.label, 'truefire');
+      }
+    }
+    const fbDbSuffixes = toChordsDbSuffix(fb, parts.bass);
+    for (const sfx of fbDbSuffixes) {
+      const match = dbGroup.find((c) => c.suffix === sfx);
+      if (!match) continue;
+      match.positions.forEach((pos, idx) => {
+        const v = convertDbPosition(chordName, pos, false);
+        if (!v) return;
+        const posLabel =
+          v.baseFret === 1
+            ? `Position ${idx + 1} (Open / 1fr)`
+            : `Position ${idx + 1} (${v.baseFret}fr Neck)`;
+        pushCandidate(v, posLabel, 'chords-db');
+      });
+    }
+    tryMovable(E_SHAPES[fb], 4, 'E-Shape Barre');
+    tryMovable(A_SHAPES[fb], 9, 'A-Shape Barre');
+  }
 
   return out;
 }

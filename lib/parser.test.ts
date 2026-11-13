@@ -11,8 +11,8 @@ import {
 } from './parser';
 import { computeBaseFret, detectBarre, parseFretString } from './voicing';
 import { buildFretboardGeometry, GRID } from './fretboard';
-import { getVoicingCandidates } from './chordLibrary';
-import { calculateCapoForKey, transposeChord, transposeKey } from './music';
+import { getVoicingCandidates, resolveVoicing } from './chordLibrary';
+import { calculateCapoForKey, isChord, parseChordName, transposeChord, transposeKey } from './music';
 import { planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
 import { parsePnwChordsHtml } from './importers/pnwChords';
@@ -373,5 +373,110 @@ Your email address will not be published.`;
     expect(cleaned.formattedText).toContain('[Verse 1]');
     expect(cleaned.formattedText).not.toContain('AbAA#Bb');
     expect(cleaned.formattedText).not.toContain('Leave a Reply');
+  });
+});
+
+describe('inline section prefixes, hyphenated syllables, and altered slash-extension chords', () => {
+  it('parses [Intro] E9 (for 4 measures) into an Intro header plus clickable E9 chord and inline note', () => {
+    const raw = `
+Title: St. Patrick's Day
+[Intro] E9 (for 4 measures)
+A2 - B4 - E9 (2x)
+    `;
+    const song = parseSong(raw);
+    expect(song.lines[0]).toMatchObject({ type: 'section_header', label: 'Intro' });
+
+    const introLine = song.lines[1];
+    expect(introLine.type).toBe('lyric_line');
+    expect(introLine.tokens[0]).toMatchObject({ type: 'chord', chord: 'E9' });
+    expect(introLine.tokens[0].voicing).toBeDefined();
+    expect(introLine.tokens[1]).toMatchObject({ type: 'lyric', text: '(for 4 measures)' });
+
+    const outroLine = song.lines[2];
+    expect(outroLine.tokens.filter((t) => t.chord).map((t) => t.chord)).toEqual(['A2', 'B4', 'E9']);
+    expect(outroLine.tokens.find((t) => t.text === '(2x)')).toBeDefined();
+  });
+
+  it('recognizes, transposes, and resolves voicings for Gsus#4/2, G2, D7/F#, and E7/G#', () => {
+    expect(isChord('Gsus#4/2')).toBe(true);
+    expect(isChord('G2')).toBe(true);
+    expect(isChord('Gsus4#11')).toBe(true);
+    expect(isChord('D7/F#')).toBe(true);
+    expect(isChord('E7/G#')).toBe(true);
+
+    expect(parseChordName('Gsus#4/2')).toEqual({
+      root: 'G',
+      suffix: 'sus#4/2',
+      bass: undefined,
+      stars: '',
+    });
+    expect(parseChordName('D7/F#')).toEqual({
+      root: 'D',
+      suffix: '7',
+      bass: 'F#',
+      stars: '',
+    });
+
+    expect(transposeChord('Gsus#4/2', 2)).toBe('Asus#4/2');
+    expect(transposeChord('G2', 2)).toBe('A2');
+    expect(transposeChord('D7/F#', 2)).toBe('E7/G#');
+
+    const line1 = extractChordPositions('G#m7b5 Amaj7 D7/F# Gsus#4/2 G2');
+    expect(line1?.map((c) => c.chord)).toEqual(['G#m7b5', 'Amaj7', 'D7/F#', 'Gsus#4/2', 'G2']);
+
+    const line2 = extractChordPositions('E7/G# Amaj7 D7/F# Gsus#4/2');
+    expect(line2?.map((c) => c.chord)).toEqual(['E7/G#', 'Amaj7', 'D7/F#', 'Gsus#4/2']);
+
+    const empty = new Map();
+    for (const name of ['G#m7b5', 'Amaj7', 'D7/F#', 'Gsus#4/2', 'G2', 'E7/G#']) {
+      expect(resolveVoicing(name, empty)).toBeDefined();
+    }
+  });
+
+  it('joins mid-word hyphenated syllables cleanly under chord diagrams in SheetPreview plan and PDF', async () => {
+    const raw = `
+Title: Hyphen & Extension Check
+[Intro] E9 (for 4 measures)
+
+[Verse 1]
+        G#m7b5  Amaj7   D7/F#  Gsus#4/2  G2
+No way  No-     vem-    ber    will      see our goodbye
+F#m7    E/G#    Em7     D/F#    A2
+Feb-ru- ar- y,  won't you be my Valentine?
+    `;
+    const song = parseSong(raw);
+    const plan = planSheet(song, {
+      preset: 'inline_all',
+      diagramScope: 'all',
+      displayMode: 'shapes',
+      capo: 0,
+    });
+
+    expect(plan.sections[0].label).toBe('Intro');
+    expect(plan.sections[0].lines[0].tokens[0].chord).toBe('E9');
+    expect(plan.sections[0].lines[0].tokens[1].text).toBe('(for 4 measures)');
+
+    const verse = plan.sections[1];
+    expect(verse.lines[0].text).toBe('No way No-vem-ber will see our goodbye');
+    const novToken = verse.lines[0].tokens.find((t) => t.text.includes('No-vem-ber'));
+    expect(novToken?.chords?.map((c) => c.chord)).toEqual(['G#m7b5', 'Amaj7', 'D7/F#']);
+    expect(novToken?.chords?.every((c) => c.showDiagram && !!c.voicing)).toBe(true);
+
+    expect(verse.lines[1].text).toBe("Feb-ru-ar-y, won't you be my Valentine?");
+    const febToken = verse.lines[1].tokens.find((t) => t.text.includes('Feb-ru-ar-y,'));
+    expect(febToken?.chords?.map((c) => c.chord)).toEqual(['F#m7', 'E/G#']);
+
+    const element = React.createElement(SongPDFDocument, {
+      song,
+      preset: 'inline_all',
+      diagramSize: 'standard',
+      diagramScope: 'all',
+      displayMode: 'shapes',
+      scale: 1,
+      pageSize: 'A4',
+    }) as unknown as Parameters<typeof renderToBuffer>[0];
+    const buf = await renderToBuffer(element);
+    expect(buf.byteLength).toBeGreaterThan(1500);
+    expect(buf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
   });
 });

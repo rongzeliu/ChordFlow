@@ -132,45 +132,79 @@ export function SheetPreview({
                   style={{ marginBottom: pt(line.hasDiagram ? 8 : 4) }}
                   className="flex flex-wrap items-end"
                 >
-                  {line.tokens.map((tok, tIdx) => (
-                    <span key={tIdx} className="inline-flex flex-col items-start">
-                      {tok.label && tok.chord && (
-                        <button
-                          type="button"
-                          onClick={() => tok.chord && onSelectChord?.(tok.chord)}
-                          aria-label={`Change shape for ${tok.label}`}
-                          className="group mr-[0.5em] inline-flex cursor-pointer flex-col items-start rounded px-1 py-0.5 text-left transition hover:bg-honey-tint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-honey"
-                        >
-                          {tok.showDiagram && tok.voicing && (
-                            <span style={{ marginBottom: pt(2) }}>
-                              <FretboardSvg
-                                voicing={tok.voicing}
-                                size={diagramSize}
-                                scale={scale}
-                                color={INK}
-                              />
-                            </span>
-                          )}
+                  {line.tokens.map((tok, tIdx) => {
+                    const prevHyphenated = Boolean(line.tokens[tIdx - 1]?.isHyphenated);
+                    const chordHeaders =
+                      tok.chords ??
+                      (tok.label && tok.chord
+                        ? [
+                            {
+                              chord: tok.chord,
+                              label: tok.label,
+                              isCustom: tok.isCustom,
+                              voicing: tok.voicing,
+                              showDiagram: tok.showDiagram,
+                            },
+                          ]
+                        : []);
+                    const hasMultipleChords = chordHeaders.length > 1;
+                    return (
+                      <span key={tIdx} className="inline-flex flex-col items-start">
+                        {chordHeaders.length > 0 && (
                           <span
-                            style={{ fontSize: pt(9.5) }}
-                            className={`leading-tight font-semibold decoration-honey decoration-2 underline-offset-2 group-hover:underline ${
-                              tok.isCustom
-                                ? 'rounded-xs bg-honey/25 px-1 text-primary'
-                                : 'text-primary'
+                            className={`inline-flex items-end ${
+                              hasMultipleChords ? 'gap-1.5 mr-[0.5em]' : ''
                             }`}
                           >
-                            {prettyAccidentals(tok.label)}
+                            {chordHeaders.map((c, cIdx) => (
+                              <button
+                                key={`${c.chord}-${cIdx}`}
+                                type="button"
+                                onClick={() => onSelectChord?.(c.chord)}
+                                aria-label={`Change shape for ${c.label}`}
+                                className={`group inline-flex cursor-pointer flex-col items-start rounded py-0.5 text-left transition hover:bg-honey-tint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-honey ${
+                                  hasMultipleChords
+                                    ? 'px-0.5'
+                                    : tok.isHyphenated
+                                      ? 'mr-0 pr-0.5 pl-1'
+                                      : prevHyphenated
+                                        ? 'mr-[0.5em] pr-1 pl-0'
+                                        : 'mr-[0.5em] px-1'
+                                }`}
+                              >
+                                {c.showDiagram && c.voicing && (
+                                  <span style={{ marginBottom: pt(2) }}>
+                                    <FretboardSvg
+                                      voicing={c.voicing}
+                                      size={diagramSize}
+                                      scale={scale}
+                                      color={INK}
+                                    />
+                                  </span>
+                                )}
+                                <span
+                                  style={{ fontSize: pt(9.5) }}
+                                  className={`leading-tight font-semibold decoration-honey decoration-2 underline-offset-2 group-hover:underline ${
+                                    c.isCustom
+                                      ? 'rounded-xs bg-honey/25 px-1 text-primary'
+                                      : 'text-primary'
+                                  }`}
+                                >
+                                  {prettyAccidentals(c.label)}
+                                </span>
+                              </button>
+                            ))}
                           </span>
-                        </button>
-                      )}
-                      <span
-                        style={{ fontSize: pt(10.5) }}
-                        className="leading-snug whitespace-pre text-primary"
-                      >
-                        {tok.text || '\u00A0'}
+                        )}
+                        <span
+                          style={{ fontSize: pt(10.5) }}
+                          className="leading-snug whitespace-pre-wrap text-primary"
+                        >
+                          {tok.text || '\u00A0'}
+                        </span>
                       </span>
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}

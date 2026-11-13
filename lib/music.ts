@@ -5,7 +5,7 @@
 const NOTE = '[A-G](?:#|b)?';
 const QUALITY = '(?:maj|min|mi|m|M|dim|aug|sus|add|\\+|°|ø|-|Δ)?';
 const EXT =
-  '(?:\\d{1,2}|maj\\d{1,2}|M\\d{1,2}|sus\\d?|add\\d{1,2}|dim\\d?|aug|[b#]\\d{1,2}|no\\d|\\+\\d?|\\/(?:6|9|11|13)(?![#b])|\\([^)\\s]+\\))*';
+  '(?:\\d{1,2}|maj\\d{1,2}|M\\d{1,2}|sus(?:[b#]?\\d{1,2})?|add[b#]?\\d{1,2}|dim\\d?|aug|[b#]\\d{1,2}|no\\d{1,2}|\\+\\d?|\\/[b#]?\\d{1,2}(?![#b])|\\([^)\\s]+\\))*';
 
 /** Un-anchored chord pattern (no capture groups) for embedding in other regexes. */
 export const CHORD_SOURCE = `${NOTE}${QUALITY}${EXT}(?:\\/${NOTE})?\\*{0,2}`;

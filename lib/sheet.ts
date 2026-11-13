@@ -20,6 +20,16 @@ export interface SheetOptions {
   capo: number;
 }
 
+export interface PlannedChord {
+  /** Chord as written (shape name), if any. */
+  chord: string;
+  /** Chord label to print (shape or concert name). */
+  label: string;
+  isCustom: boolean;
+  voicing?: ChordVoicing;
+  showDiagram: boolean;
+}
+
 export interface PlannedToken {
   /** Chord as written (shape name), if any. */
   chord?: string;
@@ -28,9 +38,13 @@ export interface PlannedToken {
   isCustom: boolean;
   voicing?: ChordVoicing;
   showDiagram: boolean;
+  /** Multiple chords stacked over a joined hyphenated word (e.g. "No-vem-ber"). */
+  chords?: PlannedChord[];
   /** Lyric text with whitespace collapsed; may end with a single space. */
   text: string;
   trailingSpace: boolean;
+  /** True when the lyric slice ends with a mid-word hyphen (e.g. "No-" before "vem-ber"). */
+  isHyphenated?: boolean;
 }
 
 export interface PlannedLine {
@@ -81,10 +95,18 @@ export function computeKeyInfo(song: ParsedSong, capo: number): KeyInfo {
   return { shapeKey, concertKey, capo, summary };
 }
 
-function normalizeText(text: string, isFirst: boolean): { text: string; trailingSpace: boolean } {
+function normalizeText(
+  text: string,
+  isFirst: boolean,
+): { text: string; trailingSpace: boolean; isHyphenated: boolean } {
   let t = text.replace(/\s+/g, ' ');
+  // Collapse intra-token hyphen-space sequences (e.g. "ar- y," -> "ar-y,", "No-  vem-ber" -> "No-vem-ber")
+  t = t.replace(/([A-Za-z])-(?:\s*-)*\s+(?=[A-Za-z])/g, '$1-');
+  // Strip trailing alignment spaces / repeated filler hyphens after a mid-word hyphen (e.g. "No-   " -> "No-", "al- -  " -> "al-")
+  t = t.replace(/([A-Za-z])-(?:\s*-)*\s*$/, '$1-');
   if (isFirst) t = t.trimStart();
-  return { text: t, trailingSpace: /\s$/.test(t) };
+  const isHyphenated = /[A-Za-z]-$/.test(t);
+  return { text: t, trailingSpace: !isHyphenated && /\s$/.test(t), isHyphenated };
 }
 
 export function planSheet(song: ParsedSong, opts: SheetOptions): SheetPlan {
@@ -124,12 +146,70 @@ export function planSheet(song: ParsedSong, opts: SheetOptions): SheetPlan {
         ...norm,
       };
     });
+
+    // Join runs of short hyphenated chord tokens (e.g. [G#m7b5]"No-" + [Amaj7]"vem-" + [D7/F#]"ber will")
+    // so mid-word syllables remain unbroken while keeping each chord clickable & visible above the word.
+    const mergedTokens: PlannedToken[] = [];
+    for (let idx = 0; idx < tokens.length; idx++) {
+      const cur = tokens[idx];
+      if (
+        cur.chord &&
+        cur.label &&
+        cur.isHyphenated &&
+        !/\s/.test(cur.text) &&
+        idx + 1 < tokens.length &&
+        tokens[idx + 1].chord &&
+        tokens[idx + 1].label
+      ) {
+        const groupedChords: PlannedChord[] = [
+          {
+            chord: cur.chord,
+            label: cur.label,
+            isCustom: cur.isCustom,
+            voicing: cur.voicing,
+            showDiagram: cur.showDiagram,
+          },
+        ];
+        let combinedText = cur.text;
+        let last = cur;
+        let j = idx + 1;
+        while (j < tokens.length && tokens[j].chord && tokens[j].label) {
+          const nxt = tokens[j];
+          groupedChords.push({
+            chord: nxt.chord!,
+            label: nxt.label!,
+            isCustom: nxt.isCustom,
+            voicing: nxt.voicing,
+            showDiagram: nxt.showDiagram,
+          });
+          combinedText += nxt.text;
+          last = nxt;
+          j++;
+          if (!nxt.isHyphenated || /\s/.test(nxt.text)) break;
+        }
+        mergedTokens.push({
+          chord: cur.chord,
+          label: cur.label,
+          isCustom: groupedChords.some((c) => c.isCustom),
+          voicing: cur.voicing,
+          showDiagram: groupedChords.some((c) => c.showDiagram),
+          chords: groupedChords,
+          text: combinedText,
+          trailingSpace: last.trailingSpace,
+          isHyphenated: last.isHyphenated,
+        });
+        idx = j - 1;
+      } else {
+        mergedTokens.push(cur);
+      }
+    }
+
     return {
       kind: 'lyric',
-      tokens,
-      hasChords: tokens.some((t) => t.chord),
+      tokens: mergedTokens,
+      hasChords: mergedTokens.some((t) => t.chord || (t.chords && t.chords.length > 0)),
       hasDiagram,
-      text: tokens.map((t) => t.text).join(''),
+      text: mergedTokens.map((t) => t.text).join(''),
     };
   };
 
