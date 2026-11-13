@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { Download, FileText, Loader2, Printer, X } from 'lucide-react';
 import type {
@@ -56,61 +56,105 @@ export function ExportPreviewDialog({
   onClose,
 }: ExportPreviewDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
+  const wasOpenRef = useRef(false);
   const titleId = useId();
   const [compiling, setCompiling] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+
+  const closeWithFade = useCallback(() => {
+    setIsClosing(true);
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      dialogRef.current?.close();
+    }, 180);
+  }, []);
 
   // Sync native <dialog> open/close state with `open` prop
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (open) {
-      if (!dialog.open) {
-        dialog.showModal();
+      if (!wasOpenRef.current) {
+        wasOpenRef.current = true;
+        if (closeTimerRef.current) {
+          window.clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        setIsClosing(false);
+        if (!dialog.open) {
+          dialog.showModal();
+        }
       }
-    } else if (dialog.open) {
-      dialog.close();
+    } else {
+      wasOpenRef.current = false;
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setIsClosing(false);
+      if (dialog.open) {
+        dialog.close();
+      }
     }
   }, [open]);
 
-  // Native <dialog> close event listener + light-dismiss fallback for browsers without `closedby="any"`
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Native <dialog> close, Escape key (cancel), and backdrop click listeners — all using fadeout
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
     const handleClose = () => {
       dialog.returnValue = '';
+      wasOpenRef.current = false;
+      setIsClosing(false);
       onClose();
     };
-    dialog.addEventListener('close', handleClose);
 
-    let cleanupBackdrop: (() => void) | undefined;
-    if (!('closedBy' in HTMLDialogElement.prototype)) {
-      const isOutside = (e: PointerEvent) => {
-        const r = dialog.getBoundingClientRect();
-        return (
-          e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
-        );
-      };
-      let pressedOutside = false;
-      const onDown = (e: PointerEvent) => {
-        pressedOutside = isOutside(e);
-      };
-      const onUp = (e: PointerEvent) => {
-        if (pressedOutside && isOutside(e)) dialog.close();
-      };
-      dialog.addEventListener('pointerdown', onDown);
-      dialog.addEventListener('pointerup', onUp);
-      cleanupBackdrop = () => {
-        dialog.removeEventListener('pointerdown', onDown);
-        dialog.removeEventListener('pointerup', onUp);
-      };
-    }
+    const handleCancel = (e: Event) => {
+      e.preventDefault();
+      closeWithFade();
+    };
+
+    const isOutside = (e: PointerEvent) => {
+      const r = dialog.getBoundingClientRect();
+      return (
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
+      );
+    };
+    let pressedOutside = false;
+    const onDown = (e: PointerEvent) => {
+      pressedOutside = isOutside(e);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (pressedOutside && isOutside(e)) {
+        closeWithFade();
+      }
+    };
+
+    dialog.addEventListener('close', handleClose);
+    dialog.addEventListener('cancel', handleCancel);
+    dialog.addEventListener('pointerdown', onDown);
+    dialog.addEventListener('pointerup', onUp);
 
     return () => {
       dialog.removeEventListener('close', handleClose);
-      cleanupBackdrop?.();
+      dialog.removeEventListener('cancel', handleCancel);
+      dialog.removeEventListener('pointerdown', onDown);
+      dialog.removeEventListener('pointerup', onUp);
     };
-  }, [onClose]);
+  }, [onClose, closeWithFade]);
 
   const handleDownloadPDF = async () => {
     try {
@@ -153,8 +197,11 @@ export function ExportPreviewDialog({
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
-      {...({ closedby: 'any' } as Record<string, string>)}
-      className="export-preview-dialog m-auto w-full max-w-5xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] backdrop:bg-primary/45 backdrop:backdrop-blur-[1px]"
+      className={`export-preview-dialog m-auto w-full max-w-5xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] transition-all duration-200 ease-out starting:scale-[0.98] starting:opacity-0 backdrop:bg-primary/45 backdrop:backdrop-blur-[1px] backdrop:transition-opacity backdrop:duration-200 starting:backdrop:opacity-0 ${
+        isClosing
+          ? 'pointer-events-none scale-[0.98] opacity-0 backdrop:opacity-0'
+          : 'scale-100 opacity-100'
+      }`}
     >
       {open && (
         <div className="flex max-h-[90dvh] flex-col print:block print:max-h-none">
@@ -174,16 +221,14 @@ export function ExportPreviewDialog({
               </div>
             </div>
 
-            <form method="dialog">
-              <button
-                type="submit"
-                value="cancel"
-                aria-label="Close export preview"
-                className="rounded-lg p-1.5 text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </form>
+            <button
+              type="button"
+              onClick={closeWithFade}
+              aria-label="Close export preview"
+              className="rounded-lg p-1.5 text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
 
           {/* Export Size & Formatting Controls Bar (hidden when printing natively) */}

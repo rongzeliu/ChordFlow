@@ -187,6 +187,7 @@ export function ChordFlowWorkspace() {
       capo: effectiveCapo,
     });
     setJustSaved(true);
+    triggerToast('Saved', 'saved');
     window.setTimeout(() => setJustSaved(false), 1800);
   };
 
@@ -200,6 +201,7 @@ export function ChordFlowWorkspace() {
     setNewChordName('');
     setNewChordFrets('');
     setOverrideError(null);
+    triggerToast('Saved', 'saved');
   };
 
   const performUrlImport = async (targetUrl: string) => {

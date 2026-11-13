@@ -47,6 +47,17 @@ export function ChordVoicingDialog({
   const [customError, setCustomError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
 
+  const closeWithFade = useCallback(() => {
+    setIsClosing(true);
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+    }
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
+      dialogRef.current?.close();
+    }, 180);
+  }, []);
+
   // Sync native <dialog> modal open/close state only when `chordName` changes
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -87,7 +98,7 @@ export function ChordVoicingDialog({
     };
   }, []);
 
-  // Native <dialog> close event listener + light-dismiss fallback for browsers without `closedby="any"`
+  // Native <dialog> close, Escape key (cancel), and backdrop click listeners — all using fadeout
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -98,37 +109,40 @@ export function ChordVoicingDialog({
       setIsClosing(false);
       onClose();
     };
-    dialog.addEventListener('close', handleClose);
 
-    // Fallback for browsers where `closedby="any"` is not yet supported (e.g. Safari)
-    let cleanupBackdrop: (() => void) | undefined;
-    if (!('closedBy' in HTMLDialogElement.prototype)) {
-      const isOutside = (e: PointerEvent) => {
-        const r = dialog.getBoundingClientRect();
-        return (
-          e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
-        );
-      };
-      let pressedOutside = false;
-      const onDown = (e: PointerEvent) => {
-        pressedOutside = isOutside(e);
-      };
-      const onUp = (e: PointerEvent) => {
-        if (pressedOutside && isOutside(e)) dialog.close();
-      };
-      dialog.addEventListener('pointerdown', onDown);
-      dialog.addEventListener('pointerup', onUp);
-      cleanupBackdrop = () => {
-        dialog.removeEventListener('pointerdown', onDown);
-        dialog.removeEventListener('pointerup', onUp);
-      };
-    }
+    const handleCancel = (e: Event) => {
+      e.preventDefault();
+      closeWithFade();
+    };
+
+    const isOutside = (e: PointerEvent) => {
+      const r = dialog.getBoundingClientRect();
+      return (
+        e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom
+      );
+    };
+    let pressedOutside = false;
+    const onDown = (e: PointerEvent) => {
+      pressedOutside = isOutside(e);
+    };
+    const onUp = (e: PointerEvent) => {
+      if (pressedOutside && isOutside(e)) {
+        closeWithFade();
+      }
+    };
+
+    dialog.addEventListener('close', handleClose);
+    dialog.addEventListener('cancel', handleCancel);
+    dialog.addEventListener('pointerdown', onDown);
+    dialog.addEventListener('pointerup', onUp);
 
     return () => {
       dialog.removeEventListener('close', handleClose);
-      cleanupBackdrop?.();
+      dialog.removeEventListener('cancel', handleCancel);
+      dialog.removeEventListener('pointerdown', onDown);
+      dialog.removeEventListener('pointerup', onUp);
     };
-  }, [onClose]);
+  }, [onClose, closeWithFade]);
 
   const candidates = useMemo(() => {
     if (!chordName) return [];
@@ -141,17 +155,6 @@ export function ChordVoicingDialog({
     if (parsedDraft) return fretsToString(parsedDraft);
     return currentVoicing ? fretsToString(currentVoicing.frets) : '';
   }, [customFretsInput, currentVoicing]);
-
-  const closeWithFade = useCallback(() => {
-    setIsClosing(true);
-    if (closeTimerRef.current) {
-      window.clearTimeout(closeTimerRef.current);
-    }
-    closeTimerRef.current = window.setTimeout(() => {
-      closeTimerRef.current = null;
-      dialogRef.current?.close();
-    }, 180);
-  }, []);
 
   const commitSelectedVoicing = useCallback(() => {
     if (!chordName || isClosing) return;
@@ -179,7 +182,6 @@ export function ChordVoicingDialog({
   const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDialogElement>) => {
     if (e.key !== 'Enter' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
     const target = e.target as HTMLElement | null;
-    // Let the close/reset buttons handle their own Enter key activation
     if (target?.closest('[data-dialog-ignore-enter="true"]')) return;
     e.preventDefault();
     commitSelectedVoicing();
@@ -196,9 +198,10 @@ export function ChordVoicingDialog({
       ref={dialogRef}
       aria-labelledby={titleId}
       onKeyDown={handleDialogKeyDown}
-      {...({ closedby: 'any' } as Record<string, string>)}
-      className={`m-auto w-full max-w-2xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] transition-all duration-200 ease-out backdrop:bg-primary/40 backdrop:backdrop-blur-[1px] backdrop:transition-opacity backdrop:duration-200 ${
-        isClosing ? 'pointer-events-none scale-[0.98] opacity-0 backdrop:opacity-0' : 'scale-100 opacity-100'
+      className={`m-auto w-full max-w-2xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] transition-all duration-200 ease-out starting:scale-[0.98] starting:opacity-0 backdrop:bg-primary/40 backdrop:backdrop-blur-[1px] backdrop:transition-opacity backdrop:duration-200 starting:backdrop:opacity-0 ${
+        isClosing
+          ? 'pointer-events-none scale-[0.98] opacity-0 backdrop:opacity-0'
+          : 'scale-100 opacity-100'
       }`}
     >
       {chordName && (
@@ -228,16 +231,14 @@ export function ChordVoicingDialog({
                   Reset default
                 </button>
               )}
-              <form method="dialog">
-                <button
-                  type="submit"
-                  value="cancel"
-                  aria-label="Close voicing picker"
-                  className="rounded-lg p-1.5 text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={closeWithFade}
+                aria-label="Close voicing picker"
+                className="rounded-lg p-1.5 text-muted transition hover:bg-sage hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
             </div>
           </div>
 
