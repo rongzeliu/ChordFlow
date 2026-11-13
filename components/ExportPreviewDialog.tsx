@@ -13,7 +13,7 @@ import type {
 } from '@/types/chord';
 import { SongPDFDocument } from './pdf/SongPDFDocument';
 import { SheetPreview } from './SheetPreview';
-import { Field, inputClass, Segmented } from './ui';
+import { CustomSelect, Field, Segmented, type SelectOption } from './ui';
 
 interface ExportPreviewDialogProps {
   open: boolean;
@@ -32,11 +32,31 @@ interface ExportPreviewDialogProps {
   onClose: () => void;
 }
 
-const PRESET_LABELS: { id: LayoutPreset; label: string }[] = [
-  { id: 'inline_all', label: 'Study (Diagram above every chord)' },
-  { id: 'first_occurrence_only', label: 'Rehearsal (First appearance only)' },
-  { id: 'top_glossary', label: 'Glossary (Chord grid at top)' },
-  { id: 'worship_two_column', label: 'Lead sheet (Two columns)' },
+const PRESET_OPTIONS: SelectOption<LayoutPreset>[] = [
+  {
+    value: 'inline_all',
+    label: 'Study',
+    description: 'Diagram above every chord',
+    triggerLabel: 'Study (Every chord)',
+  },
+  {
+    value: 'first_occurrence_only',
+    label: 'Rehearsal',
+    description: 'First appearance only',
+    triggerLabel: 'Rehearsal (First only)',
+  },
+  {
+    value: 'top_glossary',
+    label: 'Glossary',
+    description: 'Chord grid at top',
+    triggerLabel: 'Glossary (Chord grid)',
+  },
+  {
+    value: 'worship_two_column',
+    label: 'Lead sheet',
+    description: 'Two columns',
+    triggerLabel: 'Lead sheet (Two columns)',
+  },
 ];
 
 export function ExportPreviewDialog({
@@ -253,20 +273,14 @@ export function ExportPreviewDialog({
               ]}
             />
 
-            <Field label="Layout style" htmlFor="export-preset-select">
-              <select
-                id="export-preset-select"
-                value={preset}
-                onChange={(e) => onChangePreset(e.target.value as LayoutPreset)}
-                className={`${inputClass} py-1.5 text-xs`}
-              >
-                {PRESET_LABELS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <CustomSelect<LayoutPreset>
+              id="export-preset-select"
+              label="Layout style"
+              value={preset}
+              options={PRESET_OPTIONS}
+              onChange={onChangePreset}
+              menuWidthClass="w-60"
+            />
 
             <Field label={`Download scale · ${Math.round(scale * 100)}%`} htmlFor="export-scale">
               <input

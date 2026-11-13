@@ -208,9 +208,11 @@ export default function SavedSongsPage() {
                         <button
                           type="button"
                           onClick={() => handleOpenSong(song.id)}
-                          className="inline-flex items-center gap-2.5 text-left font-semibold text-primary decoration-honey decoration-2 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
+                          className="group/title inline-flex items-center gap-2.5 text-left font-semibold text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
                         >
-                          <span>{song.title}</span>
+                          <span className="decoration-honey decoration-2 underline-offset-4 group-hover/title:underline">
+                            {song.title}
+                          </span>
                           {isCurrent && (
                             <span className="shrink-0 rounded-full border border-primary/25 bg-sage px-2 py-0.5 text-[10px] font-semibold text-primary">
                               Current
