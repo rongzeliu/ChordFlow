@@ -27,9 +27,10 @@ describe('voicing & fret string parsing', () => {
     expect(parseFretString('022000')).toEqual([0, 2, 2, 0, 0, 0]);
   });
 
-  it('parses hyphen/space separated fret strings including double-digit frets', () => {
+  it('parses hyphen/space separated and compact multi-digit fret strings including double-digit frets', () => {
     expect(parseFretString('x-3-2-0-3-3')).toEqual([-1, 3, 2, 0, 3, 3]);
     expect(parseFretString('x 10 12 12 11 x')).toEqual([-1, 10, 12, 12, 11, -1]);
+    expect(parseFretString('101210111010')).toEqual([10, 12, 10, 11, 10, 10]);
   });
 
   it('computes baseFret = 1 for open position and minFret when any fret > 4', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Check, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import type { ChordVoicing } from '@/types/chord';
 import { getVoicingCandidates, type VoicingCandidate } from '@/lib/chordLibrary';
@@ -26,7 +26,7 @@ interface ChordVoicingDialogProps {
 const SOURCE_BADGE: Record<VoicingCandidate['source'], string> = {
   song: 'Song Default',
   truefire: 'TrueFire Chart',
-  'chords-db': 'Guitar Chords DB',
+  'chords-db': 'Chords DB',
   caged: 'CAGED Movable',
 };
 
@@ -40,15 +40,22 @@ export function ChordVoicingDialog({
   onClose,
 }: ChordVoicingDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const titleId = useId();
   const [customFretsInput, setCustomFretsInput] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
+  const [isClosing, setIsClosing] = useState(false);
 
   // Sync native <dialog> modal open/close state with `chordName` prop
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (chordName) {
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setIsClosing(false);
       if (!dialog.open) {
         dialog.showModal();
       }
@@ -59,6 +66,14 @@ export function ChordVoicingDialog({
     }
   }, [chordName, currentVoicing]);
 
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
+
   // Native <dialog> close event listener + light-dismiss fallback for browsers without `closedby="any"`
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -66,6 +81,7 @@ export function ChordVoicingDialog({
 
     const handleClose = () => {
       dialog.returnValue = '';
+      setIsClosing(false);
       onClose();
     };
     dialog.addEventListener('close', handleClose);
@@ -105,38 +121,67 @@ export function ChordVoicingDialog({
     return getVoicingCandidates(chordName, songCustomVoicings);
   }, [chordName, songCustomVoicings]);
 
-  const activeFretSig = currentVoicing ? fretsToString(currentVoicing.frets) : '';
+  // Active selected fret signature reflects whichever shape the user clicked or typed
+  const activeFretSig = useMemo(() => {
+    const parsedDraft = parseFretString(customFretsInput);
+    if (parsedDraft) return fretsToString(parsedDraft);
+    return currentVoicing ? fretsToString(currentVoicing.frets) : '';
+  }, [customFretsInput, currentVoicing]);
 
-  const handleChooseCandidate = (cand: VoicingCandidate) => {
-    if (!chordName) return;
-    onSelectFrets(chordName, fretsToString(cand.voicing.frets));
-    dialogRef.current?.close();
-  };
+  const closeWithFade = useCallback(() => {
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(() => {
+      dialogRef.current?.close();
+    }, 180);
+  }, []);
 
-  const handleApplyCustomFrets = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chordName) return;
+  const commitSelectedVoicing = useCallback(() => {
+    if (!chordName || isClosing) return;
     const parsed = parseFretString(customFretsInput);
     if (!parsed) {
       setCustomError('Enter 6 strings from low E to high e (e.g. 320033 or x-3-2-0-3-3).');
       return;
     }
     onSelectFrets(chordName, fretsToString(parsed));
-    dialogRef.current?.close();
+    closeWithFade();
+  }, [chordName, isClosing, customFretsInput, onSelectFrets, closeWithFade]);
+
+  // Transfer outline & checkmark when clicking a shape card without closing the dialog
+  const handleChooseCandidate = (cand: VoicingCandidate) => {
+    setCustomFretsInput(fretsToString(cand.voicing.frets));
+    if (customError) setCustomError(null);
+  };
+
+  const handleApplyCustomFrets = (e: React.FormEvent) => {
+    e.preventDefault();
+    commitSelectedVoicing();
+  };
+
+  // Allow pressing Enter anywhere in the dialog (including when a shape card is focused) to apply and save
+  const handleDialogKeyDown = (e: React.KeyboardEvent<HTMLDialogElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+    const target = e.target as HTMLElement | null;
+    // Let the close/reset buttons handle their own Enter key activation
+    if (target?.closest('[data-dialog-ignore-enter="true"]')) return;
+    e.preventDefault();
+    commitSelectedVoicing();
   };
 
   const handleReset = () => {
     if (!chordName) return;
     onResetOverride(chordName);
-    dialogRef.current?.close();
+    closeWithFade();
   };
 
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
+      onKeyDown={handleDialogKeyDown}
       {...({ closedby: 'any' } as Record<string, string>)}
-      className="m-auto w-full max-w-2xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] backdrop:bg-primary/40 backdrop:backdrop-blur-[1px]"
+      className={`m-auto w-full max-w-2xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] transition-all duration-200 ease-out backdrop:bg-primary/40 backdrop:backdrop-blur-[1px] backdrop:transition-opacity backdrop:duration-200 ${
+        isClosing ? 'scale-[0.98] opacity-0 backdrop:opacity-0' : 'scale-100 opacity-100'
+      }`}
     >
       {chordName && (
         <div className="flex max-h-[85dvh] flex-col">
@@ -154,7 +199,7 @@ export function ChordVoicingDialog({
               </h2>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-dialog-ignore-enter="true">
               {hasUserOverride && (
                 <button
                   type="button"
@@ -190,6 +235,7 @@ export function ChordVoicingDialog({
                       key={cand.id}
                       type="button"
                       autoFocus={index === 0}
+                      aria-pressed={isSelected}
                       onClick={() => handleChooseCandidate(cand)}
                       className={`group relative flex flex-col items-center justify-between rounded-xl border px-3 py-3.5 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey ${
                         isSelected
@@ -199,7 +245,7 @@ export function ChordVoicingDialog({
                     >
                       {isSelected && (
                         <span
-                          aria-label="Currently active shape"
+                          aria-label="Currently selected shape"
                           className="absolute top-2.5 right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-honey text-primary shadow-2xs"
                         >
                           <Check className="h-3 w-3 stroke-[2.5]" aria-hidden="true" />
@@ -220,7 +266,11 @@ export function ChordVoicingDialog({
                         />
                       </div>
 
-                      <span className="font-mono text-sm font-bold tracking-wide text-primary">
+                      <span
+                        className={`max-w-full truncate font-mono font-bold tracking-wide whitespace-nowrap text-primary ${
+                          sig.length > 8 ? 'text-xs' : 'text-sm'
+                        }`}
+                      >
                         {sig}
                       </span>
                     </button>
@@ -256,7 +306,7 @@ export function ChordVoicingDialog({
                   spellCheck={false}
                   autoCorrect="off"
                   autoCapitalize="off"
-                  placeholder="e.g. 320033 or x-3-2-0-3-3"
+                  placeholder="e.g. 320033"
                   className={`${inputClass} py-1.5 font-mono text-xs`}
                 />
                 <button

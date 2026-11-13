@@ -85,6 +85,18 @@ export function ChordFlowWorkspace() {
   const [justSaved, setJustSaved] = useState(false);
   const [editingChord, setEditingChord] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [savedToastVisible, setSavedToastVisible] = useState(false);
+  const savedToastTimerRef = useRef<number | null>(null);
+
+  const triggerSavedToast = () => {
+    setSavedToastVisible(true);
+    if (savedToastTimerRef.current) {
+      window.clearTimeout(savedToastTimerRef.current);
+    }
+    savedToastTimerRef.current = window.setTimeout(() => {
+      setSavedToastVisible(false);
+    }, 2000);
+  };
 
   // URL Importer & Raw-Paste Cleaner state
   const [importUrl, setImportUrl] = useState('');
@@ -731,10 +743,31 @@ export function ChordFlowWorkspace() {
         currentVoicing={editingCurrentVoicing}
         songCustomVoicings={baseParsedSong.customVoicings}
         hasUserOverride={Boolean(editingChord && customOverrides[editingChord])}
-        onSelectFrets={(chord, frets) => setCustomOverride(chord, frets)}
+        onSelectFrets={(chord, frets) => {
+          setCustomOverride(chord, frets);
+          triggerSavedToast();
+        }}
         onResetOverride={(chord) => removeCustomOverride(chord)}
         onClose={() => setEditingChord(null)}
       />
+
+      {/* Bottom-of-screen "Saved" Confirmation Toast */}
+      <div
+        role="status"
+        aria-live="polite"
+        className={`pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 transition-all duration-300 ease-out print:hidden ${
+          savedToastVisible
+            ? 'translate-y-0 opacity-100'
+            : 'translate-y-2 opacity-0'
+        }`}
+      >
+        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary px-4 py-2 text-xs font-semibold text-base shadow-[0_8px_24px_rgba(26,56,43,0.24)]">
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-honey text-primary">
+            <Check className="h-3 w-3 stroke-[2.5]" aria-hidden="true" />
+          </span>
+          <span>Saved</span>
+        </div>
+      </div>
 
       {/* Export & Print Preview Modal Popup */}
       <ExportPreviewDialog

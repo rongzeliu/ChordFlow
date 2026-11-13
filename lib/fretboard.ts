@@ -18,15 +18,15 @@ export const GRID = {
   markerY: 15,
   /**
    * Symmetric viewBox around x = 50 (the center of strings 15..85):
-   * [-25 .. 125] has width 150 and midpoint 50, keeping the fretboard grid dead-center
-   * while leaving ample room on the left for bold "7fr" / "12fr" fret position labels.
+   * [-35 .. 135] has width 170 and midpoint 50, keeping the fretboard grid dead-center
+   * while leaving ample room on the left for bold "7fr" / "10fr" fret position labels.
    */
-  originX: -25,
-  width: 150,
+  originX: -35,
+  width: 170,
 } as const;
 
 /** Rendered diagram width in pt (PDF and on-screen paper preview), before the scale multiplier. */
-export const DIAGRAM_WIDTH: Record<DiagramSize, number> = { compact: 32, standard: 50 };
+export const DIAGRAM_WIDTH: Record<DiagramSize, number> = { compact: 35, standard: 54 };
 
 export interface Line { x1: number; y1: number; x2: number; y2: number; width: number }
 export interface Dot { cx: number; cy: number; r: number; finger?: number }
@@ -82,10 +82,10 @@ export function buildFretboardGeometry(voicing: ChordVoicing, _size: DiagramSize
     geometry.nut = { x: GRID.left - 0.6, y: GRID.top - 5, width: GRID.right - GRID.left + 1.2, height: 5 };
   } else {
     geometry.baseFretLabel = {
-      x: GRID.left - 5,
+      x: GRID.left - 11,
       y: fretY(0) + dy / 2 + 6,
       text: `${baseFret}fr`,
-      fontSize: 18,
+      fontSize: 17,
       anchor: 'end',
     };
   }
