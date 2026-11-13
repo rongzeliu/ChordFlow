@@ -85,16 +85,20 @@ export function ChordFlowWorkspace() {
   const [justSaved, setJustSaved] = useState(false);
   const [editingChord, setEditingChord] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [savedToastVisible, setSavedToastVisible] = useState(false);
+  const [toastState, setToastState] = useState<{
+    visible: boolean;
+    message: string;
+    kind: 'saved' | 'reset';
+  }>({ visible: false, message: 'Saved', kind: 'saved' });
   const savedToastTimerRef = useRef<number | null>(null);
 
-  const triggerSavedToast = () => {
-    setSavedToastVisible(true);
+  const triggerToast = (message: string, kind: 'saved' | 'reset' = 'saved') => {
+    setToastState({ visible: true, message, kind });
     if (savedToastTimerRef.current) {
       window.clearTimeout(savedToastTimerRef.current);
     }
     savedToastTimerRef.current = window.setTimeout(() => {
-      setSavedToastVisible(false);
+      setToastState((prev) => ({ ...prev, visible: false }));
     }, 2000);
   };
 
@@ -651,11 +655,15 @@ export function ChordFlowWorkspace() {
                     {customOverrides[v.name] && (
                       <button
                         type="button"
-                        aria-label={`Reset ${v.name}`}
-                        onClick={() => removeCustomOverride(v.name)}
+                        aria-label={`Reset ${v.name} to default`}
+                        title="Reset to default"
+                        onClick={() => {
+                          removeCustomOverride(v.name);
+                          triggerToast('Reset to default', 'reset');
+                        }}
                         className="absolute top-1 right-1 rounded p-0.5 text-muted opacity-0 group-hover:opacity-100 hover:bg-sage hover:text-primary focus-visible:opacity-100"
                       >
-                        <X className="h-3 w-3" aria-hidden="true" />
+                        <RotateCcw className="h-3 w-3" aria-hidden="true" />
                       </button>
                     )}
                   </li>
@@ -745,27 +753,34 @@ export function ChordFlowWorkspace() {
         hasUserOverride={Boolean(editingChord && customOverrides[editingChord])}
         onSelectFrets={(chord, frets) => {
           setCustomOverride(chord, frets);
-          triggerSavedToast();
+          triggerToast('Saved', 'saved');
         }}
-        onResetOverride={(chord) => removeCustomOverride(chord)}
+        onResetOverride={(chord) => {
+          removeCustomOverride(chord);
+          triggerToast('Reset to default', 'reset');
+        }}
         onClose={() => setEditingChord(null)}
       />
 
-      {/* Bottom-of-screen "Saved" Confirmation Toast */}
+      {/* Bottom-of-screen Confirmation Toast ("Saved" / "Reset to default") */}
       <div
         role="status"
         aria-live="polite"
         className={`pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 transition-all duration-300 ease-out print:hidden ${
-          savedToastVisible
+          toastState.visible
             ? 'translate-y-0 opacity-100'
             : 'translate-y-2 opacity-0'
         }`}
       >
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary px-4 py-2 text-xs font-semibold text-base shadow-[0_8px_24px_rgba(26,56,43,0.24)]">
           <span className="flex h-4 w-4 items-center justify-center rounded-full bg-honey text-primary">
-            <Check className="h-3 w-3 stroke-[2.5]" aria-hidden="true" />
+            {toastState.kind === 'reset' ? (
+              <RotateCcw className="h-2.5 w-2.5 stroke-[2.5]" aria-hidden="true" />
+            ) : (
+              <Check className="h-3 w-3 stroke-[2.5]" aria-hidden="true" />
+            )}
           </span>
-          <span>Saved</span>
+          <span>{toastState.message}</span>
         </div>
       </div>
 

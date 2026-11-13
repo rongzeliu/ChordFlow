@@ -41,28 +41,41 @@ export function ChordVoicingDialog({
 }: ChordVoicingDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
+  const openedChordRef = useRef<string | null>(null);
   const titleId = useId();
   const [customFretsInput, setCustomFretsInput] = useState('');
   const [customError, setCustomError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
 
-  // Sync native <dialog> modal open/close state with `chordName` prop
+  // Sync native <dialog> modal open/close state only when `chordName` changes
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
+
     if (chordName) {
+      if (openedChordRef.current !== chordName) {
+        openedChordRef.current = chordName;
+        if (closeTimerRef.current) {
+          window.clearTimeout(closeTimerRef.current);
+          closeTimerRef.current = null;
+        }
+        setIsClosing(false);
+        setCustomFretsInput(currentVoicing ? fretsToString(currentVoicing.frets) : '');
+        setCustomError(null);
+        if (!dialog.open) {
+          dialog.showModal();
+        }
+      }
+    } else {
+      openedChordRef.current = null;
       if (closeTimerRef.current) {
         window.clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
       setIsClosing(false);
-      if (!dialog.open) {
-        dialog.showModal();
+      if (dialog.open) {
+        dialog.close();
       }
-      setCustomFretsInput(currentVoicing ? fretsToString(currentVoicing.frets) : '');
-      setCustomError(null);
-    } else if (dialog.open) {
-      dialog.close();
     }
   }, [chordName, currentVoicing]);
 
@@ -81,6 +94,7 @@ export function ChordVoicingDialog({
 
     const handleClose = () => {
       dialog.returnValue = '';
+      openedChordRef.current = null;
       setIsClosing(false);
       onClose();
     };
@@ -130,7 +144,11 @@ export function ChordVoicingDialog({
 
   const closeWithFade = useCallback(() => {
     setIsClosing(true);
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current);
+    }
     closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
       dialogRef.current?.close();
     }, 180);
   }, []);
@@ -168,7 +186,7 @@ export function ChordVoicingDialog({
   };
 
   const handleReset = () => {
-    if (!chordName) return;
+    if (!chordName || isClosing) return;
     onResetOverride(chordName);
     closeWithFade();
   };
@@ -180,7 +198,7 @@ export function ChordVoicingDialog({
       onKeyDown={handleDialogKeyDown}
       {...({ closedby: 'any' } as Record<string, string>)}
       className={`m-auto w-full max-w-2xl rounded-2xl border border-warm-border bg-surface p-0 text-primary shadow-[0_20px_50px_rgba(26,56,43,0.22)] transition-all duration-200 ease-out backdrop:bg-primary/40 backdrop:backdrop-blur-[1px] backdrop:transition-opacity backdrop:duration-200 ${
-        isClosing ? 'scale-[0.98] opacity-0 backdrop:opacity-0' : 'scale-100 opacity-100'
+        isClosing ? 'pointer-events-none scale-[0.98] opacity-0 backdrop:opacity-0' : 'scale-100 opacity-100'
       }`}
     >
       {chordName && (
