@@ -8,6 +8,7 @@ import type {
   DiagramScope,
   DisplayMode,
   LayoutPreset,
+  LyricChordToken,
   ParsedSong,
   SongLine,
 } from '@/types/chord';
@@ -109,6 +110,40 @@ function normalizeText(
   return { text: t, trailingSpace: !isHyphenated && /\s$/.test(t), isHyphenated };
 }
 
+/**
+ * Repairs un-hyphenated mid-word splits produced when a chord column lands inside a word
+ * (e.g. "what wil" + "l be?" -> "what " + "will be?", "make yo" + "u this guaran" + "tee" -> "make " + "you this " + "guarantee").
+ */
+function repairMidWordSplits(rawTokens: LyricChordToken[]): LyricChordToken[] {
+  const texts = rawTokens.map((t) => t.text ?? '');
+  for (let i = 0; i < texts.length - 1; i++) {
+    const cur = texts[i];
+    const nxt = texts[i + 1];
+    if (!cur || !nxt) continue;
+    // If `cur` ends with a word character and `nxt` starts with whitespace, move the leading space
+    // to the end of `cur` so `nxt`'s word starts flush under its chord.
+    if (/[A-Za-z0-9'?!.,;:]$/.test(cur) && /^\s+\S/.test(nxt)) {
+      texts[i] = `${cur} `;
+      texts[i + 1] = nxt.replace(/^\s+/, '');
+      continue;
+    }
+    if (!/[A-Za-z0-9']$/.test(cur) || !/^[A-Za-z0-9']/.test(nxt)) continue;
+
+    const curMatch = /^(.*?\s+)([A-Za-z0-9']+)$/.exec(cur);
+    if (curMatch) {
+      texts[i] = curMatch[1];
+      texts[i + 1] = curMatch[2] + nxt;
+    } else {
+      const nxtMatch = /^([A-Za-z0-9']+\s*)(.*)$/.exec(nxt);
+      if (nxtMatch) {
+        texts[i] = cur + nxtMatch[1];
+        texts[i + 1] = nxtMatch[2];
+      }
+    }
+  }
+  return rawTokens.map((t, idx) => ({ ...t, text: texts[idx] }));
+}
+
 export function planSheet(song: ParsedSong, opts: SheetOptions): SheetPlan {
   const keyInfo = computeKeyInfo(song, opts.capo);
   const concert = opts.displayMode === 'concert' && opts.capo > 0;
@@ -126,7 +161,8 @@ export function planSheet(song: ParsedSong, opts: SheetOptions): SheetPlan {
       return { kind: line.type, tokens: [], hasChords: false, hasDiagram: false, text: line.rawText };
     }
     let hasDiagram = false;
-    const tokens = line.tokens.map((tok, idx): PlannedToken => {
+    const repairedTokens = repairMidWordSplits(line.tokens);
+    const tokens = repairedTokens.map((tok, idx): PlannedToken => {
       const norm = normalizeText(tok.text ?? '', idx === 0);
       if (!tok.chord) return { isCustom: false, showDiagram: false, ...norm };
       const v = tok.voicing;

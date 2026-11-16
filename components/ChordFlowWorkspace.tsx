@@ -63,6 +63,9 @@ export function ChordFlowWorkspace() {
     pageSize,
     capoOverride,
     customOverrides,
+    gridSize,
+    showGrid,
+    chordGridOffsets,
     savedSongs,
     setRawInput,
     applyImportedSong,
@@ -74,6 +77,10 @@ export function ChordFlowWorkspace() {
     setCapoOverride,
     setCustomOverride,
     removeCustomOverride,
+    setGridSize,
+    setShowGrid,
+    setChordGridOffset,
+    resetChordGridOffsets,
     saveCurrentSong,
   } = useChordFlowStore();
 
@@ -616,6 +623,43 @@ export function ChordFlowWorkspace() {
                   className="h-[38px] w-full accent-forest"
                 />
               </Field>
+              <Segmented<'on' | 'off'>
+                label="Sheet grid"
+                value={showGrid ? 'on' : 'off'}
+                onChange={(v) => setShowGrid(v === 'on')}
+                options={[
+                  { value: 'on', label: 'Show' },
+                  { value: 'off', label: 'Hide' },
+                ]}
+              />
+              <Field label={`Grid size · ${gridSize}pt`} htmlFor="grid-size">
+                <input
+                  id="grid-size"
+                  type="range"
+                  min={12}
+                  max={48}
+                  step={2}
+                  value={gridSize}
+                  onChange={(e) => setGridSize(parseInt(e.target.value, 10))}
+                  className="h-[38px] w-full accent-forest"
+                />
+              </Field>
+              <div className="col-span-2 flex items-center justify-between gap-2 rounded-lg border border-warm-border bg-sage/55 px-3 py-2 text-xs text-muted">
+                <span>Drag any chord on the sheet to snap it onto the grid.</span>
+                {Object.keys(chordGridOffsets).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetChordGridOffsets();
+                      triggerToast('Reset to default', 'reset');
+                    }}
+                    className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-primary/20 bg-surface px-2 py-1 text-[11px] font-medium text-primary transition hover:border-primary/40 hover:bg-honey-tint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-honey"
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                    <span>Reset positions</span>
+                  </button>
+                )}
+              </div>
             </div>
           </SidebarSection>
 
@@ -742,6 +786,13 @@ export function ChordFlowWorkspace() {
             capo={effectiveCapo}
             scale={scale}
             pageSize={pageSize}
+            gridSize={gridSize}
+            showGrid={showGrid}
+            chordGridOffsets={chordGridOffsets}
+            onSnapChord={(key, cols) => {
+              setChordGridOffset(key, cols);
+              triggerToast('Saved', 'saved');
+            }}
             onSelectChord={(chord) => setEditingChord(chord)}
           />
         </main>
@@ -797,10 +848,19 @@ export function ChordFlowWorkspace() {
         capo={effectiveCapo}
         scale={scale}
         pageSize={pageSize}
+        gridSize={gridSize}
+        showGrid={showGrid}
+        chordGridOffsets={chordGridOffsets}
         onChangePreset={setPreset}
         onChangeDiagramSize={setDiagramSize}
         onChangeScale={setScale}
         onChangePageSize={setPageSize}
+        onChangeGridSize={setGridSize}
+        onChangeShowGrid={setShowGrid}
+        onSnapChord={(key, cols) => {
+          setChordGridOffset(key, cols);
+          triggerToast('Saved', 'saved');
+        }}
         onClose={() => setExportOpen(false)}
       />
     </div>

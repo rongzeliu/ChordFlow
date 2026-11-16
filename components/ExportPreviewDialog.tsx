@@ -25,10 +25,16 @@ interface ExportPreviewDialogProps {
   capo: number;
   scale: number;
   pageSize: PageSize;
+  gridSize: number;
+  showGrid: boolean;
+  chordGridOffsets: Record<string, number>;
   onChangePreset: (preset: LayoutPreset) => void;
   onChangeDiagramSize: (size: DiagramSize) => void;
   onChangeScale: (scale: number) => void;
   onChangePageSize: (pageSize: PageSize) => void;
+  onChangeGridSize: (gridSize: number) => void;
+  onChangeShowGrid: (showGrid: boolean) => void;
+  onSnapChord?: (key: string, offsetCols: number) => void;
   onClose: () => void;
 }
 
@@ -69,10 +75,16 @@ export function ExportPreviewDialog({
   capo,
   scale,
   pageSize,
+  gridSize,
+  showGrid,
+  chordGridOffsets,
   onChangePreset,
   onChangeDiagramSize,
   onChangeScale,
   onChangePageSize,
+  onChangeGridSize,
+  onChangeShowGrid,
+  onSnapChord,
   onClose,
 }: ExportPreviewDialogProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
@@ -189,6 +201,9 @@ export function ExportPreviewDialog({
           capo={capo}
           scale={scale}
           pageSize={pageSize}
+          gridSize={gridSize}
+          showGrid={showGrid}
+          chordGridOffsets={chordGridOffsets}
         />,
       ).toBlob();
       const url = URL.createObjectURL(blob);
@@ -252,14 +267,14 @@ export function ExportPreviewDialog({
           </div>
 
           {/* Export Size & Formatting Controls Bar (hidden when printing natively) */}
-          <div className="grid grid-cols-1 gap-4 border-b border-warm-border bg-base/80 px-6 py-3.5 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+          <div className="grid grid-cols-1 gap-4 border-b border-warm-border bg-base/80 px-6 py-3.5 sm:grid-cols-2 lg:grid-cols-5 print:hidden">
             <Segmented<PageSize>
               label="Paper size"
               value={pageSize}
               onChange={onChangePageSize}
               options={[
-                { value: 'A4', label: 'A4 (210 × 297mm)' },
-                { value: 'LETTER', label: 'Letter (8.5 × 11in)' },
+                { value: 'A4', label: 'A4' },
+                { value: 'LETTER', label: 'Letter' },
               ]}
             />
 
@@ -294,6 +309,35 @@ export function ExportPreviewDialog({
                 className="h-[34px] w-full accent-forest"
               />
             </Field>
+
+            <Field
+              label={`Grid size · ${gridSize}pt (${showGrid ? 'Shown' : 'Hidden'})`}
+              htmlFor="export-grid-size"
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  id="export-grid-size"
+                  type="range"
+                  min={12}
+                  max={48}
+                  step={2}
+                  value={gridSize}
+                  onChange={(e) => onChangeGridSize(parseInt(e.target.value, 10))}
+                  className="h-[34px] flex-1 accent-forest"
+                />
+                <button
+                  type="button"
+                  onClick={() => onChangeShowGrid(!showGrid)}
+                  className={`h-[28px] shrink-0 cursor-pointer rounded-md border px-2 text-[11px] font-medium transition ${
+                    showGrid
+                      ? 'border-primary/40 bg-sage text-primary'
+                      : 'border-warm-border bg-surface text-muted hover:text-primary'
+                  }`}
+                >
+                  {showGrid ? 'Grid On' : 'Grid Off'}
+                </button>
+              </div>
+            </Field>
           </div>
 
           {/* Scrollable Sheet Preview Area */}
@@ -308,6 +352,10 @@ export function ExportPreviewDialog({
               capo={capo}
               scale={scale}
               pageSize={pageSize}
+              gridSize={gridSize}
+              showGrid={showGrid}
+              chordGridOffsets={chordGridOffsets}
+              onSnapChord={onSnapChord}
             />
           </div>
 

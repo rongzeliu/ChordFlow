@@ -1,4 +1,4 @@
-import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
+import { Document, Line, Page, StyleSheet, Svg, Text, View } from '@react-pdf/renderer';
 import type {
   ChordVoicing,
   DiagramScope,
@@ -21,6 +21,9 @@ export interface SongPDFDocumentProps {
   capo?: number;
   scale?: number;
   pageSize?: PageSize;
+  gridSize?: number;
+  showGrid?: boolean;
+  chordGridOffsets?: Record<string, number>;
 }
 
 export const PDFChordCard = ({
@@ -73,8 +76,20 @@ export const SongPDFDocument = ({
   capo,
   scale = 1,
   pageSize = 'A4',
+  gridSize = 24,
+  showGrid = false,
+  chordGridOffsets,
 }: SongPDFDocumentProps) => {
   const effectiveCapo = capo ?? song.capo ?? 0;
+  const cellPt = Math.max(8, gridSize) * scale;
+  const pageDims =
+    pageSize === 'LETTER' ? { width: 612, height: 792 } : { width: 595.28, height: 841.89 };
+  const verticalGridPositions: number[] = [];
+  const horizontalGridPositions: number[] = [];
+  if (showGrid) {
+    for (let x = 0; x <= pageDims.width; x += cellPt) verticalGridPositions.push(x);
+    for (let y = 0; y <= pageDims.height; y += cellPt) horizontalGridPositions.push(y);
+  }
   const plan = planSheet(song, {
     preset,
     diagramScope,
@@ -217,25 +232,31 @@ export const SongPDFDocument = ({
     },
   });
 
-  const leftSections = [];
-  const rightSections = [];
+  const leftSections: { sec: (typeof plan.sections)[number]; sIdx: number }[] = [];
+  const rightSections: { sec: (typeof plan.sections)[number]; sIdx: number }[] = [];
   if (isTwoColumn) {
     const totalWeight = plan.sections.reduce((acc, s) => acc + Math.max(2, s.lines.length + 1), 0);
     let running = 0;
-    for (const sec of plan.sections) {
+    plan.sections.forEach((sec, sIdx) => {
       const w = Math.max(2, sec.lines.length + 1);
       if (running < totalWeight / 2 || leftSections.length === 0) {
-        leftSections.push(sec);
+        leftSections.push({ sec, sIdx });
       } else {
-        rightSections.push(sec);
+        rightSections.push({ sec, sIdx });
       }
       running += w;
-    }
+    });
   } else {
-    leftSections.push(...plan.sections);
+    plan.sections.forEach((sec, sIdx) => leftSections.push({ sec, sIdx }));
   }
 
-  const renderSection = (sec: (typeof plan.sections)[number], sIdx: number) => (
+  const renderSection = ({
+    sec,
+    sIdx,
+  }: {
+    sec: (typeof plan.sections)[number];
+    sIdx: number;
+  }) => (
     <View key={sIdx} style={styles.sectionBlock} wrap={false}>
       {sec.label && (
         <Text style={isTwoColumn ? styles.sectionHeaderBoxed : styles.sectionHeaderPlain}>
@@ -281,30 +302,38 @@ export const SongPDFDocument = ({
                 <View key={tIdx} style={styles.tokenBox}>
                   {chordHeaders.length > 0 && (
                     <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                      {chordHeaders.map((c, cIdx) => (
-                        <View
-                          key={`${c.chord}-${cIdx}`}
-                          style={[
-                            styles.chordContainer,
-                            {
-                              paddingRight:
-                                token.isHyphenated && cIdx === chordHeaders.length - 1 ? 1 : 5,
-                            },
-                          ]}
-                        >
-                          {c.showDiagram && c.voicing && (
-                            <PDFFretboardSvg
-                              voicing={c.voicing}
-                              size={diagramSize}
-                              scale={scale}
-                              color="#292524"
-                            />
-                          )}
-                          <Text style={c.isCustom ? styles.chordTextCustom : styles.chordText}>
-                            {c.label}
-                          </Text>
-                        </View>
-                      ))}
+                      {chordHeaders.map((c, cIdx) => {
+                        const chordKey = `${sIdx}:${lIdx}:${tIdx}:${cIdx}`;
+                        const offsetCols = chordGridOffsets?.[chordKey] ?? 0;
+                        const offsetPt = offsetCols * cellPt;
+                        return (
+                          <View
+                            key={`${c.chord}-${cIdx}`}
+                            style={[
+                              styles.chordContainer,
+                              {
+                                paddingRight:
+                                  token.isHyphenated && cIdx === chordHeaders.length - 1 ? 1 : 5,
+                              },
+                              offsetPt !== 0
+                                ? { position: 'relative', left: offsetPt }
+                                : {},
+                            ]}
+                          >
+                            {c.showDiagram && c.voicing && (
+                              <PDFFretboardSvg
+                                voicing={c.voicing}
+                                size={diagramSize}
+                                scale={scale}
+                                color="#292524"
+                              />
+                            )}
+                            <Text style={c.isCustom ? styles.chordTextCustom : styles.chordText}>
+                              {c.label}
+                            </Text>
+                          </View>
+                        );
+                      })}
                     </View>
                   )}
                   <Text style={styles.lyricText}>{token.text || ' '}</Text>
@@ -320,6 +349,40 @@ export const SongPDFDocument = ({
   return (
     <Document title={`${plan.title} — ChordFlow`} author={plan.artist || 'ChordFlow'}>
       <Page size={pageSize} style={styles.page}>
+        {showGrid && (
+          <Svg
+            fixed
+            width={pageDims.width}
+            height={pageDims.height}
+            viewBox={`0 0 ${pageDims.width} ${pageDims.height}`}
+            style={{ position: 'absolute', top: 0, left: 0 }}
+          >
+            {verticalGridPositions.map((x, idx) => (
+              <Line
+                key={`vg-${idx}`}
+                x1={x}
+                y1={0}
+                x2={x}
+                y2={pageDims.height}
+                stroke="#1A382B"
+                strokeOpacity={0.07}
+                strokeWidth={0.5}
+              />
+            ))}
+            {horizontalGridPositions.map((y, idx) => (
+              <Line
+                key={`hg-${idx}`}
+                x1={0}
+                y1={y}
+                x2={pageDims.width}
+                y2={y}
+                stroke="#1A382B"
+                strokeOpacity={0.07}
+                strokeWidth={0.5}
+              />
+            ))}
+          </Svg>
+        )}
         <View style={styles.header}>
           <View style={styles.titleBlock}>
             <Text style={styles.title}>{plan.title}</Text>

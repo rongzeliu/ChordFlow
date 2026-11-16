@@ -431,6 +431,16 @@ A2 - B4 - E9 (2x)
     for (const name of ['G#m7b5', 'Amaj7', 'D7/F#', 'Gsus#4/2', 'G2', 'E7/G#']) {
       expect(resolveVoicing(name, empty)).toBeDefined();
     }
+
+    // Also extracts custom header glossary definitions for Gsus#4/2 (and aliases like Gsus4/2)
+    const customMap = parseCustomVoicings('G#m7b5 = 4x443x\nGsus#4/2 = 3x0202\nG2 = 3x020x');
+    expect(customMap.get('Gsus#4/2')?.frets).toEqual([3, -1, 0, 2, 0, 2]);
+    expect(customMap.get('Gsus#4/2')?.isCustom).toBe(true);
+    expect(resolveVoicing('Gsus#4/2', customMap)?.isCustom).toBe(true);
+
+    const aliasMap = parseCustomVoicings('Gsus4/2: 3x0202');
+    expect(resolveVoicing('Gsus#4/2', aliasMap)?.frets).toEqual([3, -1, 0, 2, 0, 2]);
+    expect(resolveVoicing('Gsus#4/2', aliasMap)?.isCustom).toBe(true);
   });
 
   it('joins mid-word hyphenated syllables cleanly under chord diagrams in SheetPreview plan and PDF', async () => {
@@ -474,9 +484,42 @@ Feb-ru- ar- y,  won't you be my Valentine?
       displayMode: 'shapes',
       scale: 1,
       pageSize: 'A4',
+      gridSize: 20,
+      showGrid: true,
+      chordGridOffsets: { '1:0:1:0': 2 },
     }) as unknown as Parameters<typeof renderToBuffer>[0];
     const buf = await renderToBuffer(element);
     expect(buf.byteLength).toBeGreaterThan(1500);
     expect(buf.subarray(0, 5).toString('ascii')).toBe('%PDF-');
+  });
+
+  it('repairs un-hyphenated mid-word splits in planSheet so words stay whole under chords', () => {
+    const raw = `
+G#m7b5      Amaj7   D7/F#   Gsus#4/2  G2
+Who         knows   what will be?
+E7/G#       Amaj7  D7/F#        Gsus#4/2
+But I'll    make you this guarantee
+    `;
+    const song = parseSong(raw);
+    const plan = planSheet(song, {
+      preset: 'inline_all',
+      diagramScope: 'all',
+      displayMode: 'shapes',
+      capo: 0,
+    });
+    const lines = plan.sections[0].lines;
+    expect(lines[0].tokens.map((t) => t.text)).toEqual([
+      'Who ',
+      'knows ',
+      'what ',
+      'will be?',
+      '',
+    ]);
+    expect(lines[1].tokens.map((t) => t.text)).toEqual([
+      "But I'll ",
+      'make ',
+      'you this ',
+      'guarantee',
+    ]);
   });
 });

@@ -669,6 +669,23 @@ export function resolveVoicing(
   const bare = stripStars(chord);
   const bareMatch = custom.get(bare);
   if (bareMatch) return { ...bareMatch, name: chord };
+
+  // Check common alias spellings in custom glossary (e.g. Gsus4/2 or Gsus#4 for Gsus#4/2)
+  const parts = parseChordName(bare);
+  if (parts && custom.size > 0) {
+    const bassPart = parts.bass ? `/${parts.bass}` : '';
+    const norm = normalizeSuffix(parts.suffix);
+    const aliasCandidates = new Set<string>([
+      `${parts.root}${norm}${bassPart}`,
+      `${parts.root}${parts.suffix.replace('#4', '4')}${bassPart}`,
+      `${parts.root}${parts.suffix.replace(/\/2$/, '')}${bassPart}`,
+    ]);
+    for (const candidate of aliasCandidates) {
+      const hit = custom.get(candidate) ?? custom.get(`${candidate}*`);
+      if (hit) return { ...hit, name: chord, isCustom: true };
+    }
+  }
+
   const lib = lookupStandardVoicing(bare);
   if (!lib) return undefined;
   return { ...lib, name: chord, isCustom: chord !== bare };

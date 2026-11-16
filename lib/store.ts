@@ -29,6 +29,9 @@ export interface SavedSong {
   scale: number;
   pageSize: PageSize;
   customOverrides: Record<string, string>;
+  gridSize?: number;
+  showGrid?: boolean;
+  chordGridOffsets?: Record<string, number>;
   updatedAt: string;
 }
 
@@ -47,6 +50,12 @@ interface ChordFlowState {
   capoOverride: number | null;
   /** User-defined custom chord overrides keyed by chord name (e.g., "G*" -> "320033"). */
   customOverrides: Record<string, string>;
+  /** Grid cell size in pt (12..48) used for snapping chords on the sheet & PDF. */
+  gridSize: number;
+  /** Whether the visual snap grid is rendered on the sheet preview & PDF. */
+  showGrid: boolean;
+  /** User-snapped horizontal grid cell offsets per chord token (`sIdx:lIdx:tIdx:cIdx` -> grid cells). */
+  chordGridOffsets: Record<string, number>;
   /** Saved song library persisted in LocalStorage. */
   savedSongs: SavedSong[];
 
@@ -68,6 +77,10 @@ interface ChordFlowState {
   setCapoOverride: (capo: number | null) => void;
   setCustomOverride: (chordName: string, fretDef: string) => void;
   removeCustomOverride: (chordName: string) => void;
+  setGridSize: (gridSize: number) => void;
+  setShowGrid: (showGrid: boolean) => void;
+  setChordGridOffset: (key: string, offsetCols: number) => void;
+  resetChordGridOffsets: () => void;
 
   /** Saves or updates the current song in `savedSongs` and returns its ID. */
   saveCurrentSong: (meta: {
@@ -136,6 +149,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
       pageSize: 'A4',
       capoOverride: null,
       customOverrides: {},
+      gridSize: 24,
+      showGrid: true,
+      chordGridOffsets: {},
       savedSongs: DEFAULT_SAVED_SONGS,
 
       setRawInput: (rawInput) =>
@@ -147,6 +163,7 @@ export const useChordFlowStore = create<ChordFlowState>()(
           activeSavedSongId,
           capoOverride: capo,
           customOverrides,
+          chordGridOffsets: {},
         }),
       loadTemplate: (templateId) => {
         const tpl = SONG_TEMPLATES.find((t) => t.id === templateId);
@@ -157,6 +174,7 @@ export const useChordFlowStore = create<ChordFlowState>()(
           activeSavedSongId: null,
           preset: tpl.defaultPreset,
           capoOverride: null,
+          chordGridOffsets: {},
         });
       },
       setPreset: (preset) => set({ preset }),
@@ -176,6 +194,19 @@ export const useChordFlowStore = create<ChordFlowState>()(
           delete next[chordName];
           return { customOverrides: next };
         }),
+      setGridSize: (gridSize) => set({ gridSize }),
+      setShowGrid: (showGrid) => set({ showGrid }),
+      setChordGridOffset: (key, offsetCols) =>
+        set((state) => {
+          const next = { ...state.chordGridOffsets };
+          if (offsetCols === 0) {
+            delete next[key];
+          } else {
+            next[key] = offsetCols;
+          }
+          return { chordGridOffsets: next };
+        }),
+      resetChordGridOffsets: () => set({ chordGridOffsets: {} }),
 
       saveCurrentSong: ({ title, artist, lastPlayedKey, shapeKey, capo }) => {
         const state = get();
@@ -207,6 +238,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
           scale: state.scale,
           pageSize: state.pageSize,
           customOverrides: { ...state.customOverrides },
+          gridSize: state.gridSize,
+          showGrid: state.showGrid,
+          chordGridOffsets: { ...state.chordGridOffsets },
           updatedAt: new Date().toISOString(),
         };
 
@@ -247,6 +281,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
           scale: 1.0,
           pageSize: state.pageSize,
           customOverrides: {},
+          gridSize: state.gridSize,
+          showGrid: state.showGrid,
+          chordGridOffsets: {},
           updatedAt: new Date().toISOString(),
         };
 
@@ -260,6 +297,7 @@ export const useChordFlowStore = create<ChordFlowState>()(
           scale: 1.0,
           capoOverride: null,
           customOverrides: {},
+          chordGridOffsets: {},
           savedSongs: [newEntry, ...state.savedSongs],
         });
         return id;
@@ -280,6 +318,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
           pageSize: song.pageSize,
           capoOverride: song.capo,
           customOverrides: { ...song.customOverrides },
+          gridSize: song.gridSize ?? get().gridSize,
+          showGrid: song.showGrid ?? get().showGrid,
+          chordGridOffsets: { ...(song.chordGridOffsets ?? {}) },
         });
       },
 

@@ -17,7 +17,7 @@ import { buildVoicing, parseFretString } from './voicing';
 // ---------------------------------------------------------------------------------------------
 
 const FRET_TOKEN = '(?:[xXnN]|1[0-9]|2[0-4]|[0-9])';
-const FRETS_SOURCE = `(?:[xXnN0-9]{6}|${FRET_TOKEN}(?:[\\s\\-,.]+${FRET_TOKEN}){5})`;
+const FRETS_SOURCE = `(?:[xXnN0-9]{6,12}|${FRET_TOKEN}(?:[\\s\\-,.]+${FRET_TOKEN}){5})`;
 
 /** Header voicing definition, e.g. `G* = 320033`, `Em7*: 0 2 2 0 3 3`, `D/F#* 2-x-0-2-3-2 (thumb)`. */
 export const VOICING_DEF_RE = new RegExp(
