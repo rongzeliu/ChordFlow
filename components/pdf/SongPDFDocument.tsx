@@ -189,7 +189,7 @@ export const SongPDFDocument = ({
     },
     chordContainer: {
       flexDirection: 'column',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       marginBottom: 1.5,
       paddingRight: 5,
     },

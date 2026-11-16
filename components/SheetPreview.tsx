@@ -296,7 +296,7 @@ export function SheetPreview({
                                     }
                                     onSelectChord?.(c.chord);
                                   }}
-                                  className={`group relative inline-flex flex-col items-start rounded py-0.5 text-left transition select-none hover:bg-honey-tint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-honey ${
+                                  className={`group relative inline-flex flex-col items-center rounded py-0.5 text-center transition select-none hover:bg-honey-tint focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-honey ${
                                     onSnapChord ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
                                   } ${
                                     isDraggingThis
