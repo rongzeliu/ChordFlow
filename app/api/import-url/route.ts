@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { parsePnwChordsHtml } from '@/lib/importers/pnwChords';
 import { detectSupportedImportUrl } from '@/lib/importers/textCleaner';
 import { parseUltimateGuitarHtml } from '@/lib/importers/ultimateGuitar';
+import {
+  extractYouTubeChordsWithGemini,
+  MissingGeminiApiKeyError,
+} from '@/lib/importers/youtube';
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +14,7 @@ export async function POST(request: Request) {
 
     if (!rawUrl) {
       return NextResponse.json(
-        { error: 'Please enter a PNW Chords or Ultimate Guitar song URL.' },
+        { error: 'Please enter a YouTube, PNW Chords, or Ultimate Guitar song URL.' },
         { status: 400 },
       );
     }
@@ -20,10 +24,15 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Unsupported URL. Please enter a valid http(s) link from pnwchords.com or ultimate-guitar.com.',
+            'Unsupported URL. Please enter a valid http(s) link from youtube.com, youtu.be, pnwchords.com, or ultimate-guitar.com.',
         },
         { status: 400 },
       );
+    }
+
+    if (detected.provider === 'youtube') {
+      const imported = await extractYouTubeChordsWithGemini(detected.url);
+      return NextResponse.json(imported);
     }
 
     const response = await fetch(detected.url, {
@@ -65,6 +74,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(imported);
   } catch (err) {
+    if (err instanceof MissingGeminiApiKeyError) {
+      return NextResponse.json(
+        { error: err.message, code: 'MISSING_GEMINI_API_KEY' },
+        { status: 503 },
+      );
+    }
     const message =
       err instanceof Error ? err.message : 'Unable to fetch or parse the provided chord URL.';
     return NextResponse.json({ error: message }, { status: 422 });

@@ -8,6 +8,10 @@ const ALLOWED_HOSTS: Record<string, ImportProvider> = {
   'ultimate-guitar.com': 'ultimate-guitar',
   'www.ultimate-guitar.com': 'ultimate-guitar',
   'tabs.ultimate-guitar.com': 'ultimate-guitar',
+  'youtube.com': 'youtube',
+  'www.youtube.com': 'youtube',
+  'm.youtube.com': 'youtube',
+  'youtu.be': 'youtube',
 };
 
 /** Checks whether a hostname belongs to a supported chord provider. */
@@ -16,8 +20,34 @@ export function getImportProviderForHost(hostname: string): ImportProvider | nul
   return ALLOWED_HOSTS[host] ?? null;
 }
 
+/** Extracts a canonical YouTube video ID from `youtube.com` (`/watch?v=`, `/shorts/`, `/embed/`, `/live/`) or `youtu.be/<id>`. */
+export function extractYouTubeVideoId(parsed: URL): string | null {
+  const host = parsed.hostname.toLowerCase().trim();
+  let candidate: string | null = null;
+  if (host === 'youtu.be') {
+    candidate = parsed.pathname.split('/').filter(Boolean)[0] ?? null;
+  } else if (host === 'youtube.com' || host === 'www.youtube.com' || host === 'm.youtube.com') {
+    if (parsed.pathname === '/watch') {
+      candidate = parsed.searchParams.get('v');
+    } else {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (
+        segments.length >= 2 &&
+        (segments[0] === 'shorts' ||
+          segments[0] === 'embed' ||
+          segments[0] === 'live' ||
+          segments[0] === 'v')
+      ) {
+        candidate = segments[1];
+      }
+    }
+  }
+  if (!candidate || !/^[A-Za-z0-9_-]{6,20}$/.test(candidate)) return null;
+  return candidate;
+}
+
 /**
- * Validates and normalizes a single-line URL string if it points to PNW Chords or Ultimate Guitar.
+ * Validates and normalizes a single-line URL string if it points to YouTube, PNW Chords, or Ultimate Guitar.
  */
 export function detectSupportedImportUrl(input: string): {
   url: string;
@@ -30,6 +60,14 @@ export function detectSupportedImportUrl(input: string): {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
     const provider = getImportProviderForHost(parsed.hostname);
     if (!provider) return null;
+    if (provider === 'youtube') {
+      const videoId = extractYouTubeVideoId(parsed);
+      if (!videoId) return null;
+      return {
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        provider: 'youtube',
+      };
+    }
     return { url: parsed.toString(), provider };
   } catch {
     return null;

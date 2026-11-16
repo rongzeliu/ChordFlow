@@ -214,13 +214,13 @@ export function ChordFlowWorkspace() {
   const performUrlImport = async (targetUrl: string) => {
     const trimmed = targetUrl.trim();
     if (!trimmed) {
-      setImportError('Paste a PNW Chords or Ultimate Guitar song link first.');
+      setImportError('Paste a YouTube, PNW Chords, or Ultimate Guitar song link first.');
       return;
     }
     const detected = detectSupportedImportUrl(trimmed);
     if (!detected) {
       setImportError(
-        'Unsupported link. Please paste a song URL from pnwchords.com or ultimate-guitar.com.',
+        'Unsupported link. Please paste a song URL from youtube.com, youtu.be, pnwchords.com, or ultimate-guitar.com.',
       );
       return;
     }
@@ -383,7 +383,7 @@ export function ChordFlowWorkspace() {
             {/* URL Import Bar */}
             <form onSubmit={handleImportSubmit} className="space-y-2 pr-3">
               <label htmlFor="song-import-url" className="sr-only">
-                Paste PNW Chords or Ultimate Guitar link to import and format
+                Paste YouTube, PNW Chords, or Ultimate Guitar link to import and format
               </label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
@@ -407,7 +407,7 @@ export function ChordFlowWorkspace() {
                         void performUrlImport(pasted);
                       }
                     }}
-                    placeholder="Paste PNW Chords or Ultimate Guitar link…"
+                    placeholder="Paste YouTube, PNW Chords, or Ultimate Guitar link…"
                     className={`${inputClass} py-1.5 pr-2.5 pl-8 text-xs`}
                   />
                 </div>
@@ -433,7 +433,11 @@ export function ChordFlowWorkspace() {
               <div className="mr-3 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-sage px-3 py-1.5 text-xs text-primary">
                 <span className="font-medium">
                   Imported from{' '}
-                  {importedMeta.provider === 'pnwchords' ? 'PNW Chords' : 'Ultimate Guitar'}
+                  {importedMeta.provider === 'youtube'
+                    ? 'YouTube'
+                    : importedMeta.provider === 'pnwchords'
+                      ? 'PNW Chords'
+                      : 'Ultimate Guitar'}
                 </span>
                 <a
                   href={importedMeta.sourceUrl}

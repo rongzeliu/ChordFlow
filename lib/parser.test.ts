@@ -18,6 +18,11 @@ import { SONG_TEMPLATES } from './templates';
 import { parsePnwChordsHtml } from './importers/pnwChords';
 import { cleanRawPastedText, detectSupportedImportUrl } from './importers/textCleaner';
 import { parseUltimateGuitarHtml } from './importers/ultimateGuitar';
+import {
+  extractYouTubeChordsWithGemini,
+  formatGeminiYouTubeSheet,
+  MissingGeminiApiKeyError,
+} from './importers/youtube';
 import { SongPDFDocument } from '@/components/pdf/SongPDFDocument';
 
 describe('voicing & fret string parsing', () => {
@@ -251,8 +256,8 @@ D/F#* = 200233
   });
 });
 
-describe('URL chord importers (PNW Chords & Ultimate Guitar)', () => {
-  it('validates supported PNW Chords and Ultimate Guitar URLs', () => {
+describe('URL chord importers (YouTube, PNW Chords & Ultimate Guitar)', () => {
+  it('validates and normalizes supported YouTube, PNW Chords, and Ultimate Guitar URLs', () => {
     expect(
       detectSupportedImportUrl('https://pnwchords.com/jesus-be-the-name-elevation-worship/'),
     ).toEqual({
@@ -265,7 +270,79 @@ describe('URL chord importers (PNW Chords & Ultimate Guitar)', () => {
       url: 'https://tabs.ultimate-guitar.com/tab/jeff-buckley/hallelujah-chords-198052',
       provider: 'ultimate-guitar',
     });
+    expect(
+      detectSupportedImportUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s'),
+    ).toEqual({
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      provider: 'youtube',
+    });
+    expect(
+      detectSupportedImportUrl('https://youtu.be/dQw4w9WgXcQ?si=abc123'),
+    ).toEqual({
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      provider: 'youtube',
+    });
+    expect(
+      detectSupportedImportUrl('https://youtube.com/shorts/dQw4w9WgXcQ'),
+    ).toEqual({
+      url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      provider: 'youtube',
+    });
+    expect(detectSupportedImportUrl('https://www.youtube.com/watch')).toBeNull();
     expect(detectSupportedImportUrl('https://example.com/song')).toBeNull();
+  });
+
+  it('formats structured Gemini YouTube chord & lyric output into a valid ChordFlow song', async () => {
+    const geminiOutput = {
+      title: "St. Patrick's Day",
+      artist: 'John Mayer',
+      key: 'E',
+      capo: 0,
+      tuning: 'E A D G B E',
+      sections: [
+        {
+          label: 'Intro',
+          lines: [{ chords: 'E9 (for 4 measures)', lyrics: '' }],
+        },
+        {
+          label: 'Verse 1',
+          lines: [
+            {
+              chords: 'E9                        A2',
+              lyrics: 'Here comes the cold, break out the winter clothes',
+            },
+          ],
+        },
+      ],
+    };
+
+    const res = formatGeminiYouTubeSheet(
+      geminiOutput,
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    );
+    expect(res.provider).toBe('youtube');
+    expect(res.title).toBe("St. Patrick's Day");
+    expect(res.artist).toBe('John Mayer');
+    expect(res.key).toBe('E');
+    expect(res.capo).toBe(0);
+    expect(res.formattedText).toContain('[Intro]');
+    expect(res.formattedText).toContain('E9 (for 4 measures)');
+    expect(res.formattedText).toContain('[Verse 1]');
+
+    const parsed = parseSong(res.formattedText);
+    expect(parsed.title).toBe("St. Patrick's Day");
+    expect(parsed.lines.some((l) => l.type === 'section_header' && l.label === 'Intro')).toBe(true);
+    expect(parsed.lines.some((l) => l.tokens.some((t) => t.chord === 'E9'))).toBe(true);
+
+    const prevKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    try {
+      await expect(
+        extractYouTubeChordsWithGemini('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+      ).rejects.toBeInstanceOf(MissingGeminiApiKeyError);
+    } finally {
+      if (prevKey !== undefined) process.env.GEMINI_API_KEY = prevKey;
+    }
   });
 
   it('extracts PNW Chords title, artist, data-key, normalized section headers, and aligned chords', () => {

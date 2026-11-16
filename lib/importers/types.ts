@@ -1,4 +1,4 @@
-export type ImportProvider = 'pnwchords' | 'ultimate-guitar';
+export type ImportProvider = 'pnwchords' | 'ultimate-guitar' | 'youtube';
 
 export interface ImportedSongResponse {
   title: string;
