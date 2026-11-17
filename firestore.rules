@@ -1,0 +1,184 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: /users/{userId}/songs/{songId}
+// Document ID: {songId} (must match the document's `id` field)
+// Fields:
+//   - id: string (required, immutable, 1..128 chars, must equal songId) - Unique song identifier
+//   - title: string (required, 1..300 chars) - Song title
+//   - artist: string (required, 0..300 chars) - Song artist / composer
+//   - lastPlayedKey: string (required, 0..32 chars) - Concert or shape key last played
+//   - capo: number (required, 0..11) - Capo fret position
+//   - rawInput: string (required, 0..200000 chars) - Raw chord sheet text
+//   - preset: string (required, enum: ['inline_all', 'first_occurrence_only', 'top_glossary', 'worship_two_column']) - Layout preset
+//   - diagramSize: string (required, enum: ['compact', 'standard']) - Chord diagram size
+//   - diagramScope: string (required, enum: ['custom', 'all']) - Chord diagram scope
+//   - displayMode: string (required, enum: ['shapes', 'concert']) - Chord display mode
+//   - scale: number (required, 0.5..2.0) - Sheet typography/diagram scale factor
+//   - pageSize: string (required, enum: ['A4', 'LETTER']) - Print page format
+//   - customOverrides: map (required, max 200 entries) - Custom chord fret string overrides
+//   - updatedAt: string (required, 1..64 chars) - ISO 8601 timestamp of last update
+//   - shapeKey: string (optional, 0..32 chars) - Shape key when using capo
+//   - gridSize: number (optional, 8..64) - Snap grid cell size in points
+//   - showGrid: bool (optional) - Whether visual snap grid is shown
+//   - chordGridOffsets: map (optional, max 500 entries) - User-snapped horizontal grid offsets
+//   - syncedAt: timestamp or string (optional, 1..64 chars if string) - Cloud sync metadata timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user owns the resource (for user-scoped paths)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify UID hasn't been tampered with on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only the allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate string length
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate optional string (if present, must be string and within length)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        (request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate that the document hasn't changed in immutable fields
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update)
+    // ===============================================================
+
+    function isValidSavedSong(data, songId) {
+      let requiredFields = [
+        'id',
+        'title',
+        'artist',
+        'lastPlayedKey',
+        'capo',
+        'rawInput',
+        'preset',
+        'diagramSize',
+        'diagramScope',
+        'displayMode',
+        'scale',
+        'pageSize',
+        'customOverrides',
+        'updatedAt'
+      ];
+      let allowedFields = [
+        'id',
+        'title',
+        'artist',
+        'lastPlayedKey',
+        'capo',
+        'rawInput',
+        'preset',
+        'diagramSize',
+        'diagramScope',
+        'displayMode',
+        'scale',
+        'pageSize',
+        'customOverrides',
+        'updatedAt',
+        'shapeKey',
+        'gridSize',
+        'showGrid',
+        'chordGridOffsets',
+        'syncedAt'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+        hasOnlyAllowedFields(allowedFields) &&
+        // Required fields validation
+        data.id == songId &&
+        validStringLength('id', 1, 128) &&
+        validStringLength('title', 1, 300) &&
+        validStringLength('artist', 0, 300) &&
+        validStringLength('lastPlayedKey', 0, 32) &&
+        data.capo is number && data.capo >= 0 && data.capo <= 11 &&
+        validStringLength('rawInput', 0, 200000) &&
+        data.preset in ['inline_all', 'first_occurrence_only', 'top_glossary', 'worship_two_column'] &&
+        data.diagramSize in ['compact', 'standard'] &&
+        data.diagramScope in ['custom', 'all'] &&
+        data.displayMode in ['shapes', 'concert'] &&
+        data.scale is number && data.scale >= 0.5 && data.scale <= 2.0 &&
+        data.pageSize in ['A4', 'LETTER'] &&
+        data.customOverrides is map && data.customOverrides.size() <= 200 &&
+        validStringLength('updatedAt', 1, 64) &&
+        // Optional fields validation
+        isValidOptionalString('shapeKey', 0, 32) &&
+        (!('gridSize' in data) || (data.gridSize is number && data.gridSize >= 8 && data.gridSize <= 64)) &&
+        (!('showGrid' in data) || (data.showGrid is bool)) &&
+        (!('chordGridOffsets' in data) || (data.chordGridOffsets is map && data.chordGridOffsets.size() <= 500)) &&
+        (!('syncedAt' in data) || (data.syncedAt is timestamp || (data.syncedAt is string && data.syncedAt.size() >= 1 && data.syncedAt.size() <= 64)));
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // User-scoped SavedSongs collection
+    match /users/{userId}/songs/{songId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+        uidUnchanged() &&
+        isValidSavedSong(request.resource.data, songId);
+      allow update: if isOwner(userId) &&
+        uidNotModified() &&
+        areImmutableFieldsUnchanged(['id']) &&
+        isValidSavedSong(request.resource.data, songId);
+      allow delete: if isOwner(userId);
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

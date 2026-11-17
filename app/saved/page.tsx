@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FilePlus2, Guitar, Music, Plus, Search, Trash2, X } from 'lucide-react';
+import { AuthAccountButton } from '@/components/AuthAccountButton';
 import { prettyAccidentals } from '@/lib/music';
 import { useChordFlowStore } from '@/lib/store';
 
@@ -66,6 +67,8 @@ export default function SavedSongsPage() {
             <ArrowLeft className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
             <span>Back to editor</span>
           </Link>
+
+          <AuthAccountButton />
         </div>
       </header>
 

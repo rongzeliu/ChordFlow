@@ -35,6 +35,7 @@ import {
 } from '@/lib/music';
 import { mergeUserOverrides, useChordFlowStore } from '@/lib/store';
 import { fretsToString, parseFretString } from '@/lib/voicing';
+import { AuthAccountButton } from './AuthAccountButton';
 import { ChordVoicingDialog } from './ChordVoicingDialog';
 import { FretboardSvg } from './FretboardSvg';
 import { SheetPreview } from './SheetPreview';
@@ -359,6 +360,8 @@ export function ChordFlowWorkspace() {
             <Download className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Export</span>
           </button>
+
+          <AuthAccountButton onStatusToast={(msg) => triggerToast(msg, 'saved')} />
         </nav>
       </header>
 

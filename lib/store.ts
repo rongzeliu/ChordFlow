@@ -10,6 +10,8 @@ import type {
   LayoutPreset,
   PageSize,
 } from '@/types/chord';
+import { auth } from './firebase';
+import { deleteUserSong, upsertUserSong } from './firestoreSongs';
 import { SKELETON_SONG_TEMPLATE, SONG_TEMPLATES } from './templates';
 import { buildVoicing, parseFretString } from './voicing';
 
@@ -94,6 +96,7 @@ interface ChordFlowState {
   createNewSong: () => string;
   loadSavedSong: (id: string) => void;
   deleteSavedSong: (id: string) => void;
+  setSavedSongs: (songs: SavedSong[]) => void;
 }
 
 const initialTemplate = SONG_TEMPLATES[0];
@@ -249,6 +252,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
           savedSongs: [entry, ...rest],
           activeSavedSongId: id,
         });
+        if (auth?.currentUser?.uid) {
+          void upsertUserSong(auth.currentUser.uid, entry).catch(() => {});
+        }
         return id;
       },
 
@@ -300,6 +306,9 @@ export const useChordFlowStore = create<ChordFlowState>()(
           chordGridOffsets: {},
           savedSongs: [newEntry, ...state.savedSongs],
         });
+        if (auth?.currentUser?.uid) {
+          void upsertUserSong(auth.currentUser.uid, newEntry).catch(() => {});
+        }
         return id;
       },
 
@@ -324,11 +333,17 @@ export const useChordFlowStore = create<ChordFlowState>()(
         });
       },
 
-      deleteSavedSong: (id) =>
+      deleteSavedSong: (id) => {
         set((state) => ({
           savedSongs: state.savedSongs.filter((s) => s.id !== id),
           activeSavedSongId: state.activeSavedSongId === id ? null : state.activeSavedSongId,
-        })),
+        }));
+        if (auth?.currentUser?.uid) {
+          void deleteUserSong(auth.currentUser.uid, id).catch(() => {});
+        }
+      },
+
+      setSavedSongs: (savedSongs) => set({ savedSongs }),
     }),
     {
       name: 'chordflow-workspace-v1',

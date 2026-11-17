@@ -23,6 +23,13 @@ import {
   formatGeminiYouTubeSheet,
   MissingGeminiApiKeyError,
 } from './importers/youtube';
+import { formatFirebaseAuthError } from './authStore';
+import { isFirebaseConfigured } from './firebase';
+import {
+  deserializeFirestoreSong,
+  mergeSongsByRecency,
+  serializeSongForFirestore,
+} from './firestoreSongs';
 import { SongPDFDocument } from '@/components/pdf/SongPDFDocument';
 
 describe('voicing & fret string parsing', () => {
@@ -598,5 +605,61 @@ But I'll    make you this guarantee
       'you this ',
       'guarantee',
     ]);
+  });
+});
+
+describe('Firebase Auth & Firestore song persistence helpers', () => {
+  it('degrades gracefully when Firebase env vars are unset and maps auth error codes cleanly', () => {
+    expect(typeof isFirebaseConfigured()).toBe('boolean');
+    expect(formatFirebaseAuthError({ code: 'auth/invalid-credential' })).toContain(
+      'Invalid email or password',
+    );
+    expect(formatFirebaseAuthError({ code: 'auth/email-already-in-use' })).toContain(
+      'already exists',
+    );
+    expect(formatFirebaseAuthError({ code: 'auth/weak-password' })).toContain('6 characters');
+  });
+
+  it('serializes, deserializes, and merges SavedSong entries by recency without losing grid or voicing state', () => {
+    const sampleSong = {
+      id: 'song-123',
+      title: "St. Patrick's Day",
+      artist: 'John Mayer',
+      lastPlayedKey: 'E',
+      shapeKey: 'E',
+      capo: 0,
+      rawInput: '[Intro] E9 (for 4 measures)',
+      preset: 'inline_all' as const,
+      diagramSize: 'standard' as const,
+      diagramScope: 'all' as const,
+      displayMode: 'shapes' as const,
+      scale: 1.0,
+      pageSize: 'A4' as const,
+      customOverrides: { 'Gsus#4/2': '3x0202' },
+      gridSize: 28,
+      showGrid: true,
+      chordGridOffsets: { '0:0:0:0': 2 },
+      updatedAt: '2026-11-16T10:00:00.000Z',
+    };
+
+    const serialized = serializeSongForFirestore(sampleSong);
+    const roundTripped = deserializeFirestoreSong('song-123', serialized);
+    expect(roundTripped).toEqual(sampleSong);
+
+    const olderCloud = {
+      ...sampleSong,
+      title: 'Old Title',
+      updatedAt: '2026-11-15T10:00:00.000Z',
+    };
+    const newerCloud = {
+      ...sampleSong,
+      id: 'song-456',
+      title: 'Cloud Song',
+      updatedAt: '2026-11-16T12:00:00.000Z',
+    };
+
+    const merged = mergeSongsByRecency([sampleSong], [olderCloud, newerCloud]);
+    expect(merged.map((s) => s.id)).toEqual(['song-456', 'song-123']);
+    expect(merged[1].title).toBe("St. Patrick's Day");
   });
 });
