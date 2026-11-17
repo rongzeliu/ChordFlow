@@ -12,6 +12,7 @@ import type {
 } from '@/types/chord';
 import { auth } from './firebase';
 import { deleteUserSong, upsertUserSong } from './firestoreSongs';
+import { getStarterSongs } from './seedSongs';
 import { SKELETON_SONG_TEMPLATE, SONG_TEMPLATES } from './templates';
 import { buildVoicing, parseFretString } from './voicing';
 
@@ -97,46 +98,14 @@ interface ChordFlowState {
   loadSavedSong: (id: string) => void;
   deleteSavedSong: (id: string) => void;
   setSavedSongs: (songs: SavedSong[]) => void;
+  /** UID of the Firebase account whose cloud library is currently mirrored locally. */
+  lastSyncedUid: string | null;
+  setLastSyncedUid: (uid: string | null) => void;
+  /** Clears all user-specific songs & editor state (used on sign-out / account switch). */
+  resetForSignedOutSession: () => void;
 }
 
 const initialTemplate = SONG_TEMPLATES[0];
-
-const DEFAULT_SAVED_SONGS: SavedSong[] = [
-  {
-    id: 'seed-amazing-grace',
-    title: 'Amazing Grace (My Chains Are Gone)',
-    artist: 'Chris Tomlin / Traditional',
-    lastPlayedKey: 'Bb',
-    shapeKey: 'G',
-    capo: 3,
-    rawInput: SONG_TEMPLATES[0].rawInput,
-    preset: SONG_TEMPLATES[0].defaultPreset,
-    diagramSize: 'compact',
-    diagramScope: 'all',
-    displayMode: 'shapes',
-    scale: 1,
-    pageSize: 'A4',
-    customOverrides: {},
-    updatedAt: '2026-11-08T16:00:00.000Z',
-  },
-  {
-    id: 'seed-build-my-life',
-    title: 'Build My Life (Open E Shapes)',
-    artist: 'Housefires / Pat Barrett',
-    lastPlayedKey: 'F#',
-    shapeKey: 'E',
-    capo: 2,
-    rawInput: SONG_TEMPLATES[1].rawInput,
-    preset: SONG_TEMPLATES[1].defaultPreset,
-    diagramSize: 'compact',
-    diagramScope: 'all',
-    displayMode: 'shapes',
-    scale: 1,
-    pageSize: 'A4',
-    customOverrides: {},
-    updatedAt: '2026-11-08T16:05:00.000Z',
-  },
-];
 
 export const useChordFlowStore = create<ChordFlowState>()(
   persist(
@@ -155,7 +124,8 @@ export const useChordFlowStore = create<ChordFlowState>()(
       gridSize: 24,
       showGrid: true,
       chordGridOffsets: {},
-      savedSongs: DEFAULT_SAVED_SONGS,
+      savedSongs: getStarterSongs(),
+      lastSyncedUid: null,
 
       setRawInput: (rawInput) =>
         set({ rawInput, activeTemplateId: 'custom', activeSavedSongId: null }),
@@ -344,6 +314,19 @@ export const useChordFlowStore = create<ChordFlowState>()(
       },
 
       setSavedSongs: (savedSongs) => set({ savedSongs }),
+      setLastSyncedUid: (lastSyncedUid) => set({ lastSyncedUid }),
+      resetForSignedOutSession: () =>
+        set({
+          rawInput: initialTemplate.rawInput,
+          activeTemplateId: initialTemplate.id,
+          activeSavedSongId: 'seed-amazing-grace',
+          preset: initialTemplate.defaultPreset,
+          capoOverride: null,
+          customOverrides: {},
+          chordGridOffsets: {},
+          savedSongs: getStarterSongs(),
+          lastSyncedUid: null,
+        }),
     }),
     {
       name: 'chordflow-workspace-v1',

@@ -16,9 +16,8 @@ import type {
   PageSize,
 } from '@/types/chord';
 import { db } from './firebase';
+import { getStarterSongs, isUnmodifiedStarterSong } from './seedSongs';
 import type { SavedSong } from './store';
-
-const SEED_SONG_IDS = new Set(['seed-amazing-grace', 'seed-build-my-life']);
 
 /**
  * Produces a clean Firestore-compatible object from a `SavedSong` (stripping `undefined` optional fields
@@ -176,53 +175,93 @@ export async function deleteUserSong(uid: string, songId: string): Promise<void>
   await deleteDoc(songRef);
 }
 
-/**
- * On sign-in, fetches the user's cloud songs and uploads any local songs that are either missing
- * in the cloud (excluding unmodified seed songs when the user already has cloud songs) or newer
- * locally than in the cloud.
- */
-export async function mergeLocalSongsOnSignIn(
-  uid: string,
-  localSongs: SavedSong[],
-): Promise<SavedSong[]> {
-  if (!db) return localSongs;
-  const songsRef = collection(db, 'users', uid, 'songs');
-  const snapshot = await getDocs(songsRef);
+export interface SignInLibraryPlan {
+  /** Song library that should be mirrored locally for the signed-in user. */
+  library: SavedSong[];
+  /** Songs that must be written to `users/{uid}/songs` to complete the merge. */
+  toUpload: SavedSong[];
+}
 
-  const cloudById = new Map<string, SavedSong>();
-  snapshot.forEach((docSnap) => {
-    const parsed = deserializeFirestoreSong(docSnap.id, docSnap.data() as Record<string, unknown>);
-    if (parsed) cloudById.set(parsed.id, parsed);
-  });
-
-  const hasCloudSongs = cloudById.size > 0;
-  const uploads: Promise<void>[] = [];
-
-  for (const local of localSongs) {
-    const cloud = cloudById.get(local.id);
-    const isUnmodifiedSeed =
-      SEED_SONG_IDS.has(local.id) && (local.updatedAt || '').startsWith('2026-11-08');
-    if (!cloud) {
-      if (hasCloudSongs && isUnmodifiedSeed) continue;
-      uploads.push(upsertUserSong(uid, local));
-      cloudById.set(local.id, local);
-    } else {
-      const localTime = Date.parse(local.updatedAt || '') || 0;
-      const cloudTime = Date.parse(cloud.updatedAt || '') || 0;
-      if (localTime > cloudTime) {
-        uploads.push(upsertUserSong(uid, local));
-        cloudById.set(local.id, local);
-      }
-    }
-  }
-
-  if (uploads.length > 0) {
-    await Promise.allSettled(uploads);
-  }
-
-  return Array.from(cloudById.values()).sort((a, b) => {
+function sortByRecency(songs: SavedSong[]): SavedSong[] {
+  return [...songs].sort((a, b) => {
     const tA = Date.parse(a.updatedAt || '') || 0;
     const tB = Date.parse(b.updatedAt || '') || 0;
     return tB - tA;
   });
+}
+
+/**
+ * Pure planner for the sign-in merge:
+ *  - Account switch (`previousUid` set and different from `uid`): local songs belong to another
+ *    account and are never uploaded or shown.
+ *  - Same account / first sign-in on this browser: user-edited local songs missing in the cloud
+ *    (or newer locally) are uploaded. Unmodified starter templates are never force-uploaded.
+ *  - Empty cloud library: the two starter template songs are provisioned for the new account.
+ */
+export function planSignInLibrary(params: {
+  uid: string;
+  previousUid: string | null;
+  localSongs: SavedSong[];
+  cloudSongs: SavedSong[];
+}): SignInLibraryPlan {
+  const { uid, previousUid, localSongs, cloudSongs } = params;
+  const isAccountSwitch = previousUid !== null && previousUid !== uid;
+
+  const byId = new Map<string, SavedSong>();
+  for (const c of cloudSongs) byId.set(c.id, c);
+  const toUpload: SavedSong[] = [];
+
+  if (!isAccountSwitch) {
+    for (const local of localSongs) {
+      if (isUnmodifiedStarterSong(local)) continue;
+      const cloud = byId.get(local.id);
+      const localTime = Date.parse(local.updatedAt || '') || 0;
+      const cloudTime = cloud ? Date.parse(cloud.updatedAt || '') || 0 : -1;
+      if (!cloud || localTime > cloudTime) {
+        byId.set(local.id, local);
+        toUpload.push(local);
+      }
+    }
+  }
+
+  if (cloudSongs.length === 0) {
+    for (const starter of getStarterSongs()) {
+      if (byId.has(starter.id)) continue;
+      byId.set(starter.id, starter);
+      toUpload.push(starter);
+    }
+  }
+
+  return { library: sortByRecency(Array.from(byId.values())), toUpload };
+}
+
+/** Fetches `users/{uid}/songs` once (empty array when Firestore is unavailable). */
+export async function fetchUserSongs(uid: string): Promise<SavedSong[]> {
+  if (!db) return [];
+  const snapshot = await getDocs(collection(db, 'users', uid, 'songs'));
+  const songs: SavedSong[] = [];
+  snapshot.forEach((docSnap) => {
+    const parsed = deserializeFirestoreSong(docSnap.id, docSnap.data() as Record<string, unknown>);
+    if (parsed) songs.push(parsed);
+  });
+  return songs;
+}
+
+/**
+ * On sign-in, reconciles the local library with `users/{uid}/songs` (see `planSignInLibrary`),
+ * uploads the required songs (including starter templates for brand-new accounts) and returns
+ * the library to mirror locally.
+ */
+export async function mergeLocalSongsOnSignIn(
+  uid: string,
+  localSongs: SavedSong[],
+  previousUid: string | null = null,
+): Promise<SavedSong[]> {
+  if (!db) return localSongs;
+  const cloudSongs = await fetchUserSongs(uid);
+  const plan = planSignInLibrary({ uid, previousUid, localSongs, cloudSongs });
+  if (plan.toUpload.length > 0) {
+    await Promise.allSettled(plan.toUpload.map((song) => upsertUserSong(uid, song)));
+  }
+  return plan.library;
 }

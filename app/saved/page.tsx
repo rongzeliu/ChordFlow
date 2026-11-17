@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, FilePlus2, Guitar, Music, Plus, Search, Trash2, X } from 'lucide-react';
 import { AuthAccountButton } from '@/components/AuthAccountButton';
+import { AuthGate } from '@/components/AuthGate';
 import { prettyAccidentals } from '@/lib/music';
 import { useChordFlowStore } from '@/lib/store';
 
@@ -40,7 +41,8 @@ export default function SavedSongsPage() {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col overflow-y-auto bg-base text-primary">
+    <AuthGate>
+      <div className="fixed inset-0 flex flex-col overflow-y-auto bg-base text-primary">
       {/* Header */}
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-warm-border bg-base px-6">
         <div className="flex items-center gap-2.5">
@@ -264,6 +266,7 @@ export default function SavedSongsPage() {
           </div>
         )}
       </main>
-    </div>
+      </div>
+    </AuthGate>
   );
 }

@@ -4,11 +4,7 @@ import { useEffect } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { create } from 'zustand';
 import { auth, isFirebaseConfigured } from './firebase';
-import {
-  mergeLocalSongsOnSignIn,
-  mergeSongsByRecency,
-  subscribeToUserSongs,
-} from './firestoreSongs';
+import { mergeLocalSongsOnSignIn, subscribeToUserSongs } from './firestoreSongs';
 import { useChordFlowStore } from './store';
 
 export type CloudSyncStatus = 'idle' | 'syncing' | 'synced' | 'error';
@@ -99,25 +95,44 @@ export function useFirebaseAuthSync(): void {
 
         if (!firebaseUser) {
           authStore.setSyncStatus('idle');
+          // Clear any previous account's songs & editor state from this browser.
+          useChordFlowStore.getState().resetForSignedOutSession();
           return;
         }
 
+        const uid = firebaseUser.uid;
+        const isStale = () => auth?.currentUser?.uid !== uid;
+
         authStore.setSyncStatus('syncing');
         try {
-          const localSongs = useChordFlowStore.getState().savedSongs;
-          const mergedInitial = await mergeLocalSongsOnSignIn(firebaseUser.uid, localSongs);
-          useChordFlowStore.getState().setSavedSongs(mergedInitial);
+          const chordStore = useChordFlowStore.getState();
+          const previousUid = chordStore.lastSyncedUid;
+          if (previousUid && previousUid !== uid) {
+            // Account switch on the same browser: never leak the previous user's library.
+            chordStore.resetForSignedOutSession();
+          }
+          const library = await mergeLocalSongsOnSignIn(
+            uid,
+            useChordFlowStore.getState().savedSongs,
+            previousUid,
+          );
+          if (isStale()) return;
+          useChordFlowStore.getState().setSavedSongs(library);
+          useChordFlowStore.getState().setLastSyncedUid(uid);
           authStore.setSyncStatus('synced');
         } catch {
+          if (isStale()) return;
           authStore.setSyncStatus('error');
         }
 
+        if (isStale()) return;
         unsubscribeSongsGlobal = subscribeToUserSongs(
-          firebaseUser.uid,
+          uid,
           (cloudSongs) => {
-            const currentLocal = useChordFlowStore.getState().savedSongs;
-            const merged = mergeSongsByRecency(currentLocal, cloudSongs);
-            useChordFlowStore.getState().setSavedSongs(merged);
+            if (isStale()) return;
+            // Cloud Firestore is the source of truth once the initial merge has completed
+            // (pending local writes are included via latency compensation).
+            useChordFlowStore.getState().setSavedSongs(cloudSongs);
             useAuthStore.getState().setSyncStatus('synced');
           },
           () => {

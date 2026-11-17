@@ -28,8 +28,10 @@ import { isFirebaseConfigured } from './firebase';
 import {
   deserializeFirestoreSong,
   mergeSongsByRecency,
+  planSignInLibrary,
   serializeSongForFirestore,
 } from './firestoreSongs';
+import { getStarterSongs } from './seedSongs';
 import { SongPDFDocument } from '@/components/pdf/SongPDFDocument';
 
 describe('voicing & fret string parsing', () => {
@@ -661,5 +663,45 @@ describe('Firebase Auth & Firestore song persistence helpers', () => {
     const merged = mergeSongsByRecency([sampleSong], [olderCloud, newerCloud]);
     expect(merged.map((s) => s.id)).toEqual(['song-456', 'song-123']);
     expect(merged[1].title).toBe("St. Patrick's Day");
+  });
+
+  it('provisions the two starter template songs for new accounts and isolates libraries across account switches', () => {
+    const starterSongs = getStarterSongs();
+    expect(starterSongs.map((s) => s.id)).toEqual(['seed-amazing-grace', 'seed-build-my-life']);
+
+    // Brand-new account with empty cloud library receives both starter template songs
+    const newAccountPlan = planSignInLibrary({
+      uid: 'user-new',
+      previousUid: null,
+      localSongs: starterSongs,
+      cloudSongs: [],
+    });
+    expect(newAccountPlan.library.map((s) => s.id).sort()).toEqual([
+      'seed-amazing-grace',
+      'seed-build-my-life',
+    ]);
+    expect(newAccountPlan.toUpload.map((s) => s.id).sort()).toEqual([
+      'seed-amazing-grace',
+      'seed-build-my-life',
+    ]);
+
+    // Switching from user-a to user-b never uploads user-a's custom songs into user-b's account
+    const userACustomSong = {
+      ...starterSongs[0],
+      id: 'song-user-a-private',
+      title: "User A's Private Song",
+      updatedAt: '2026-11-17T10:00:00.000Z',
+    };
+    const switchedAccountPlan = planSignInLibrary({
+      uid: 'user-b',
+      previousUid: 'user-a',
+      localSongs: [userACustomSong, ...starterSongs],
+      cloudSongs: [],
+    });
+    expect(switchedAccountPlan.library.some((s) => s.id === 'song-user-a-private')).toBe(false);
+    expect(switchedAccountPlan.library.map((s) => s.id).sort()).toEqual([
+      'seed-amazing-grace',
+      'seed-build-my-life',
+    ]);
   });
 });
