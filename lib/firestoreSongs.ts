@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -53,8 +54,51 @@ export function serializeSongForFirestore(song: SavedSong): Record<string, unkno
   if (song.chordGridOffsets !== undefined) {
     payload.chordGridOffsets = song.chordGridOffsets;
   }
+  if (typeof song.isPublic === 'boolean') {
+    payload.isPublic = song.isPublic;
+  }
+  if (typeof song.authorUid === 'string' && song.authorUid) {
+    payload.authorUid = song.authorUid.slice(0, 128);
+  }
+  if (typeof song.authorName === 'string' && song.authorName) {
+    payload.authorName = song.authorName.slice(0, 120);
+  }
+  if (typeof song.publishedAt === 'string' && song.publishedAt) {
+    payload.publishedAt = song.publishedAt.slice(0, 64);
+  }
 
   return payload;
+}
+
+/**
+ * Produces a validated Firestore document payload for `publicSongs/{song.id}`.
+ */
+export function serializePublicSongForFirestore(
+  uid: string,
+  authorName: string,
+  song: SavedSong,
+  publishedAt?: string,
+): Record<string, unknown> {
+  const nowIso = new Date().toISOString();
+  const pubAt = (publishedAt || song.publishedAt || nowIso).slice(0, 64);
+  const cleanAuthorName = (authorName || song.authorName || 'ChordFlow Musician')
+    .trim()
+    .slice(0, 120);
+
+  return {
+    ...serializeSongForFirestore({
+      ...song,
+      isPublic: true,
+      authorUid: uid,
+      authorName: cleanAuthorName,
+      publishedAt: pubAt,
+      updatedAt: song.updatedAt || nowIso,
+    }),
+    isPublic: true,
+    authorUid: uid.slice(0, 128),
+    authorName: cleanAuthorName,
+    publishedAt: pubAt,
+  };
 }
 
 /** Validates and converts a raw Firestore document snapshot data map into a `SavedSong`. */
@@ -98,7 +142,39 @@ export function deserializeFirestoreSong(
     gridSize: typeof data.gridSize === 'number' ? data.gridSize : undefined,
     showGrid: typeof data.showGrid === 'boolean' ? data.showGrid : undefined,
     chordGridOffsets: Object.keys(chordGridOffsets).length > 0 ? chordGridOffsets : undefined,
+    isPublic: typeof data.isPublic === 'boolean' ? data.isPublic : undefined,
+    authorUid: typeof data.authorUid === 'string' ? data.authorUid : undefined,
+    authorName: typeof data.authorName === 'string' ? data.authorName : undefined,
+    publishedAt: typeof data.publishedAt === 'string' ? data.publishedAt : undefined,
     updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date(0).toISOString(),
+  };
+}
+
+/**
+ * Clones a public song into a fresh private `SavedSong` copy with a new `id`,
+ * `isPublic: false`, and cleared public authorship metadata.
+ */
+export function createForkedSongCopy(
+  sourceSong: SavedSong,
+  newId?: string,
+  nowIso?: string,
+): SavedSong {
+  const generatedId =
+    newId ?? `song-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const timestamp = nowIso ?? new Date().toISOString();
+
+  return {
+    ...sourceSong,
+    id: generatedId,
+    customOverrides: { ...(sourceSong.customOverrides ?? {}) },
+    chordGridOffsets: sourceSong.chordGridOffsets
+      ? { ...sourceSong.chordGridOffsets }
+      : undefined,
+    isPublic: false,
+    authorUid: undefined,
+    authorName: undefined,
+    publishedAt: undefined,
+    updatedAt: timestamp,
   };
 }
 
@@ -173,6 +249,119 @@ export async function deleteUserSong(uid: string, songId: string): Promise<void>
   if (!db) return;
   const songRef = doc(db, 'users', uid, 'songs', songId);
   await deleteDoc(songRef);
+}
+
+/** Deletes `publicSongs/{songId}` from Cloud Firestore. */
+export async function deletePublicSongDoc(songId: string): Promise<void> {
+  if (!db) return;
+  await deleteDoc(doc(db, 'publicSongs', songId));
+}
+
+/**
+ * Publishes `song` to the top-level `publicSongs/{song.id}` collection and marks the user's
+ * private copy in `users/{uid}/songs/{song.id}` with `isPublic: true`.
+ */
+export async function publishSongToPublic(
+  uid: string,
+  authorName: string,
+  song: SavedSong,
+): Promise<SavedSong> {
+  const nowIso = new Date().toISOString();
+  const cleanAuthor = (authorName || 'ChordFlow Musician').trim().slice(0, 120);
+  const publishedSong: SavedSong = {
+    ...song,
+    isPublic: true,
+    authorUid: uid,
+    authorName: cleanAuthor,
+    publishedAt: song.publishedAt || nowIso,
+    updatedAt: nowIso,
+  };
+
+  if (db) {
+    const publicRef = doc(db, 'publicSongs', song.id);
+    const userSongRef = doc(db, 'users', uid, 'songs', song.id);
+    await Promise.all([
+      setDoc(
+        publicRef,
+        serializePublicSongForFirestore(uid, cleanAuthor, publishedSong, publishedSong.publishedAt),
+      ),
+      setDoc(userSongRef, serializeSongForFirestore(publishedSong)),
+    ]);
+  }
+
+  return publishedSong;
+}
+
+/**
+ * Removes `publicSongs/{song.id}` and marks the user's private copy in `users/{uid}/songs/{song.id}`
+ * with `isPublic: false`.
+ */
+export async function unpublishPublicSong(uid: string, song: SavedSong): Promise<SavedSong> {
+  const nowIso = new Date().toISOString();
+  const updatedSong: SavedSong = {
+    ...song,
+    isPublic: false,
+    updatedAt: nowIso,
+  };
+
+  if (db) {
+    const publicRef = doc(db, 'publicSongs', song.id);
+    const userSongRef = doc(db, 'users', uid, 'songs', song.id);
+    await Promise.all([
+      deleteDoc(publicRef),
+      setDoc(userSongRef, serializeSongForFirestore(updatedSong)),
+    ]);
+  }
+
+  return updatedSong;
+}
+
+/**
+ * Subscribes in real time to the top-level `publicSongs` collection ordered by `updatedAt` descending.
+ */
+export function subscribeToPublicSongs(
+  onUpdate: (songs: SavedSong[]) => void,
+  onError?: (err: Error) => void,
+  maxCount = 50,
+): () => void {
+  if (!db) {
+    onUpdate([]);
+    return () => {};
+  }
+  const publicRef = collection(db, 'publicSongs');
+  const q = query(publicRef, orderBy('updatedAt', 'desc'), limit(maxCount));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const songs: SavedSong[] = [];
+      snapshot.forEach((docSnap) => {
+        const parsed = deserializeFirestoreSong(
+          docSnap.id,
+          docSnap.data() as Record<string, unknown>,
+        );
+        if (parsed) songs.push(parsed);
+      });
+      onUpdate(songs);
+    },
+    (err) => {
+      onError?.(err);
+    },
+  );
+}
+
+/**
+ * Clones a public song into the user's private library (`users/{uid}/songs/{newId}`)
+ * and returns the forked private copy.
+ */
+export async function forkPublicSongToLibrary(
+  uid: string | null | undefined,
+  publicSong: SavedSong,
+): Promise<SavedSong> {
+  const forked = createForkedSongCopy(publicSong);
+  if (uid && db) {
+    await upsertUserSong(uid, forked);
+  }
+  return forked;
 }
 
 export interface SignInLibraryPlan {

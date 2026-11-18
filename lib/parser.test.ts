@@ -16,8 +16,14 @@ import { calculateCapoForKey, isChord, parseChordName, transposeChord, transpose
 import { planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
 import { parsePnwChordsHtml } from './importers/pnwChords';
+import {
+  parsePnwChordsWpSearchResults,
+  parseYouTubeSearchResultsHtml,
+  rankAndDedupeSearchResults,
+} from './importers/search';
 import { cleanRawPastedText, detectSupportedImportUrl } from './importers/textCleaner';
 import { parseUltimateGuitarHtml } from './importers/ultimateGuitar';
+import { parseWorshipTogetherHtml } from './importers/worshipTogether';
 import {
   extractYouTubeChordsWithGemini,
   formatGeminiYouTubeSheet,
@@ -26,10 +32,13 @@ import {
 import { formatFirebaseAuthError } from './authStore';
 import { isFirebaseConfigured } from './firebase';
 import {
+  createForkedSongCopy,
   deserializeFirestoreSong,
   mergeSongsByRecency,
   planSignInLibrary,
+  serializePublicSongForFirestore,
   serializeSongForFirestore,
+  subscribeToPublicSongs,
 } from './firestoreSongs';
 import { getStarterSongs } from './seedSongs';
 import { SongPDFDocument } from '@/components/pdf/SongPDFDocument';
@@ -297,8 +306,82 @@ describe('URL chord importers (YouTube, PNW Chords & Ultimate Guitar)', () => {
       url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       provider: 'youtube',
     });
+    expect(
+      detectSupportedImportUrl(
+        'https://www.worshiptogether.com/songs/build-my-life-pat-barrett/',
+      ),
+    ).toEqual({
+      url: 'https://www.worshiptogether.com/songs/build-my-life-pat-barrett/',
+      provider: 'worshiptogether',
+    });
     expect(detectSupportedImportUrl('https://www.youtube.com/watch')).toBeNull();
     expect(detectSupportedImportUrl('https://example.com/song')).toBeNull();
+  });
+
+  it('extracts WorshipTogether HTML chord-pro segments and normalizesSongSearchResult ranking', () => {
+    const wtHtml = `
+      <html>
+        <head><title>Build My Life - Pat Barrett - Worship Together</title></head>
+        <body>
+          <h1>Build My Life - Pat Barrett</h1>
+          <div>Original Key: G</div>
+          <div class="chord-pro-disp">
+            <div class="chord-pro-line">
+              <div class="chord-pro-segment">
+                <div class="chord-pro-note">G</div>
+                <div class="chord-pro-lyric">Worthy of every </div>
+              </div>
+              <div class="chord-pro-segment">
+                <div class="chord-pro-note">C2</div>
+                <div class="chord-pro-lyric">song we could ever sing</div>
+              </div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+    const wtRes = parseWorshipTogetherHtml(
+      wtHtml,
+      'https://www.worshiptogether.com/songs/build-my-life-pat-barrett/',
+    );
+    expect(wtRes.provider).toBe('worshiptogether');
+    expect(wtRes.title).toBe('Build My Life');
+    expect(wtRes.artist).toBe('Pat Barrett');
+    expect(wtRes.key).toBe('G');
+    expect(wtRes.formattedText).toContain('[G]Worthy of every [C2]song we could ever sing');
+
+    const pnwPosts = [
+      {
+        link: 'https://pnwchords.com/build-my-life-housefires/',
+        title: { rendered: 'Build My Life &#8211; Housefires - pnwchords' },
+      },
+    ];
+    const pnwResults = parsePnwChordsWpSearchResults(pnwPosts);
+    expect(pnwResults).toEqual([
+      {
+        title: 'Build My Life',
+        artist: 'Housefires',
+        url: 'https://pnwchords.com/build-my-life-housefires/',
+        provider: 'pnwchords',
+      },
+    ]);
+
+    const ytHtml =
+      '{"videoRenderer":{"videoId":"abc123XYZ89","title":{"runs":[{"text":"Build My Life Guitar Tutorial"}]},"ownerText":{"runs":[{"text":"Worship Tutorials"}]}}}';
+    const ytResults = parseYouTubeSearchResultsHtml(ytHtml);
+    expect(ytResults[0]).toMatchObject({
+      title: 'Build My Life Guitar Tutorial',
+      artist: 'Worship Tutorials',
+      url: 'https://www.youtube.com/watch?v=abc123XYZ89',
+      provider: 'youtube',
+    });
+
+    const ranked = rankAndDedupeSearchResults(
+      [...ytResults, ...pnwResults, ...pnwResults],
+      'Build My Life Housefires',
+    );
+    expect(ranked).toHaveLength(2);
+    expect(ranked[0].provider).toBe('pnwchords');
   });
 
   it('formats structured Gemini YouTube chord & lyric output into a valid ChordFlow song', async () => {
@@ -703,5 +786,42 @@ describe('Firebase Auth & Firestore song persistence helpers', () => {
       'seed-amazing-grace',
       'seed-build-my-life',
     ]);
+  });
+
+  it('serializes publicSongs documents and forks public songs with a fresh private ID and isPublic: false', () => {
+    const starter = getStarterSongs()[0];
+    const pubPayload = serializePublicSongForFirestore(
+      'uid-author-1',
+      'Robin Liu',
+      starter,
+      '2026-11-18T12:00:00.000Z',
+    );
+    expect(pubPayload.isPublic).toBe(true);
+    expect(pubPayload.authorUid).toBe('uid-author-1');
+    expect(pubPayload.authorName).toBe('Robin Liu');
+    expect(pubPayload.publishedAt).toBe('2026-11-18T12:00:00.000Z');
+
+    const publicSong = deserializeFirestoreSong(starter.id, pubPayload)!;
+    expect(publicSong).not.toBeNull();
+    expect(publicSong.isPublic).toBe(true);
+    expect(publicSong.authorUid).toBe('uid-author-1');
+    expect(publicSong.authorName).toBe('Robin Liu');
+
+    const forked = createForkedSongCopy(publicSong);
+    expect(forked.id).not.toBe(publicSong.id);
+    expect(forked.isPublic).toBe(false);
+    expect(forked.authorUid).toBeUndefined();
+    expect(forked.authorName).toBeUndefined();
+    expect(forked.publishedAt).toBeUndefined();
+    expect(forked.title).toBe(publicSong.title);
+    expect(forked.rawInput).toBe(publicSong.rawInput);
+
+    // Graceful no-op subscription when Firestore client is not initialized in Node test env
+    let initialPublicList: unknown[] | null = null;
+    const unsub = subscribeToPublicSongs((songs) => {
+      initialPublicList = songs;
+    });
+    expect(initialPublicList).toEqual([]);
+    unsub();
   });
 });

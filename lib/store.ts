@@ -11,7 +11,7 @@ import type {
   PageSize,
 } from '@/types/chord';
 import { auth } from './firebase';
-import { deleteUserSong, upsertUserSong } from './firestoreSongs';
+import { deletePublicSongDoc, deleteUserSong, upsertUserSong } from './firestoreSongs';
 import { getStarterSongs } from './seedSongs';
 import { SKELETON_SONG_TEMPLATE, SONG_TEMPLATES } from './templates';
 import { buildVoicing, parseFretString } from './voicing';
@@ -35,6 +35,10 @@ export interface SavedSong {
   gridSize?: number;
   showGrid?: boolean;
   chordGridOffsets?: Record<string, number>;
+  isPublic?: boolean;
+  authorUid?: string;
+  authorName?: string;
+  publishedAt?: string;
   updatedAt: string;
 }
 
@@ -98,6 +102,16 @@ interface ChordFlowState {
   loadSavedSong: (id: string) => void;
   deleteSavedSong: (id: string) => void;
   setSavedSongs: (songs: SavedSong[]) => void;
+  setSongPublicState: (
+    id: string,
+    meta: {
+      isPublic: boolean;
+      authorUid?: string;
+      authorName?: string;
+      publishedAt?: string;
+    },
+  ) => void;
+  addForkedSong: (song: SavedSong) => void;
   /** UID of the Firebase account whose cloud library is currently mirrored locally. */
   lastSyncedUid: string | null;
   setLastSyncedUid: (uid: string | null) => void;
@@ -214,6 +228,10 @@ export const useChordFlowStore = create<ChordFlowState>()(
           gridSize: state.gridSize,
           showGrid: state.showGrid,
           chordGridOffsets: { ...state.chordGridOffsets },
+          isPublic: existing?.isPublic,
+          authorUid: existing?.authorUid,
+          authorName: existing?.authorName,
+          publishedAt: existing?.publishedAt,
           updatedAt: new Date().toISOString(),
         };
 
@@ -304,16 +322,53 @@ export const useChordFlowStore = create<ChordFlowState>()(
       },
 
       deleteSavedSong: (id) => {
+        const target = get().savedSongs.find((s) => s.id === id);
         set((state) => ({
           savedSongs: state.savedSongs.filter((s) => s.id !== id),
           activeSavedSongId: state.activeSavedSongId === id ? null : state.activeSavedSongId,
         }));
         if (auth?.currentUser?.uid) {
           void deleteUserSong(auth.currentUser.uid, id).catch(() => {});
+          if (target?.isPublic) {
+            void deletePublicSongDoc(id).catch(() => {});
+          }
         }
       },
 
       setSavedSongs: (savedSongs) => set({ savedSongs }),
+      setSongPublicState: (id, meta) =>
+        set((state) => ({
+          savedSongs: state.savedSongs.map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  isPublic: meta.isPublic,
+                  authorUid: meta.authorUid,
+                  authorName: meta.authorName,
+                  publishedAt: meta.publishedAt,
+                  updatedAt: new Date().toISOString(),
+                }
+              : s,
+          ),
+        })),
+      addForkedSong: (song) =>
+        set((state) => ({
+          rawInput: song.rawInput,
+          activeSavedSongId: song.id,
+          activeTemplateId: 'saved',
+          preset: song.preset,
+          diagramSize: song.diagramSize,
+          diagramScope: 'all',
+          displayMode: song.displayMode,
+          scale: song.scale,
+          pageSize: song.pageSize,
+          capoOverride: song.capo,
+          customOverrides: { ...song.customOverrides },
+          gridSize: song.gridSize ?? state.gridSize,
+          showGrid: song.showGrid ?? state.showGrid,
+          chordGridOffsets: { ...(song.chordGridOffsets ?? {}) },
+          savedSongs: [song, ...state.savedSongs.filter((s) => s.id !== song.id)],
+        })),
       setLastSyncedUid: (lastSyncedUid) => set({ lastSyncedUid }),
       resetForSignedOutSession: () =>
         set({

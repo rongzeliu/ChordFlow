@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { parsePnwChordsHtml } from '@/lib/importers/pnwChords';
 import { detectSupportedImportUrl } from '@/lib/importers/textCleaner';
 import { parseUltimateGuitarHtml } from '@/lib/importers/ultimateGuitar';
+import { parseWorshipTogetherHtml } from '@/lib/importers/worshipTogether';
 import {
   extractYouTubeChordsWithGemini,
   MissingGeminiApiKeyError,
@@ -14,7 +15,10 @@ export async function POST(request: Request) {
 
     if (!rawUrl) {
       return NextResponse.json(
-        { error: 'Please enter a YouTube, PNW Chords, or Ultimate Guitar song URL.' },
+        {
+          error:
+            'Please enter a YouTube, PNW Chords, Ultimate Guitar, or WorshipTogether song URL.',
+        },
         { status: 400 },
       );
     }
@@ -24,7 +28,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Unsupported URL. Please enter a valid http(s) link from youtube.com, youtu.be, pnwchords.com, or ultimate-guitar.com.',
+            'Unsupported URL. Please enter a valid http(s) link from youtube.com, youtu.be, pnwchords.com, ultimate-guitar.com, or worshiptogether.com.',
         },
         { status: 400 },
       );
@@ -70,7 +74,9 @@ export async function POST(request: Request) {
     const imported =
       detected.provider === 'pnwchords'
         ? parsePnwChordsHtml(html, detected.url)
-        : parseUltimateGuitarHtml(html, detected.url);
+        : detected.provider === 'worshiptogether'
+          ? parseWorshipTogetherHtml(html, detected.url)
+          : parseUltimateGuitarHtml(html, detected.url);
 
     return NextResponse.json(imported);
   } catch (err) {

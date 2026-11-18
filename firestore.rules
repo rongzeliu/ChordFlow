@@ -28,6 +28,19 @@ rules_version = '2';
 //   - showGrid: bool (optional) - Whether visual snap grid is shown
 //   - chordGridOffsets: map (optional, max 500 entries) - User-snapped horizontal grid offsets
 //   - syncedAt: timestamp or string (optional, 1..64 chars if string) - Cloud sync metadata timestamp
+//   - isPublic: bool (optional) - Whether the song is published to the public song library
+//   - authorUid: string (optional, 0..128 chars) - UID of the publishing author
+//   - authorName: string (optional, 0..120 chars) - Display name of the publishing author
+//   - publishedAt: string (optional, 0..64 chars) - ISO 8601 timestamp when published
+//
+// Collection: /publicSongs/{songId}
+// Document ID: {songId} (must match the document's `id` field)
+// Fields:
+//   - All required and optional core/layout fields from SavedSong above, plus:
+//   - isPublic: bool (required, must be true) - Public visibility flag
+//   - authorUid: string (required, immutable, 1..128 chars, must equal request.auth.uid) - Author UID
+//   - authorName: string (required, 1..120 chars) - Author display name
+//   - publishedAt: string (required, 1..64 chars) - ISO 8601 timestamp when published
 //
 // ===============================================================
 
@@ -41,6 +54,10 @@ service cloud.firestore {
     // Check if the user is authenticated
     function isAuthenticated() {
       return request.auth != null;
+    }
+
+    function isSignedIn() {
+      return isAuthenticated();
     }
 
     // Check if user owns the resource (for user-scoped paths)
@@ -94,8 +111,9 @@ service cloud.firestore {
     // Domain Validators (Used in BOTH create and update)
     // ===============================================================
 
-    function isValidSavedSong(data, songId) {
-      let requiredFields = [
+    // Required song fields shared by SavedSong and PublicSong
+    function songRequiredFields() {
+      return [
         'id',
         'title',
         'artist',
@@ -111,32 +129,22 @@ service cloud.firestore {
         'customOverrides',
         'updatedAt'
       ];
-      let allowedFields = [
-        'id',
-        'title',
-        'artist',
-        'lastPlayedKey',
-        'capo',
-        'rawInput',
-        'preset',
-        'diagramSize',
-        'diagramScope',
-        'displayMode',
-        'scale',
-        'pageSize',
-        'customOverrides',
-        'updatedAt',
-        'shapeKey',
-        'gridSize',
-        'showGrid',
-        'chordGridOffsets',
-        'syncedAt'
-      ];
+    }
 
-      return hasRequiredFields(requiredFields) &&
-        hasOnlyAllowedFields(allowedFields) &&
-        // Required fields validation
-        data.id == songId &&
+    // Optional song layout fields shared by SavedSong and PublicSong
+    function songOptionalLayoutFields() {
+      return ['shapeKey', 'gridSize', 'showGrid', 'chordGridOffsets'];
+    }
+
+    // Public-sharing metadata fields
+    function songPublicFields() {
+      return ['isPublic', 'authorUid', 'authorName', 'publishedAt'];
+    }
+
+    // Field-value validation shared by SavedSong and PublicSong
+    // (key-set enforcement is done by the calling validator)
+    function isValidSongCore(data, songId) {
+      return data.id == songId &&
         validStringLength('id', 1, 128) &&
         validStringLength('title', 1, 300) &&
         validStringLength('artist', 0, 300) &&
@@ -151,12 +159,38 @@ service cloud.firestore {
         data.pageSize in ['A4', 'LETTER'] &&
         data.customOverrides is map && data.customOverrides.size() <= 200 &&
         validStringLength('updatedAt', 1, 64) &&
-        // Optional fields validation
+        // Optional layout fields
         isValidOptionalString('shapeKey', 0, 32) &&
         (!('gridSize' in data) || (data.gridSize is number && data.gridSize >= 8 && data.gridSize <= 64)) &&
         (!('showGrid' in data) || (data.showGrid is bool)) &&
-        (!('chordGridOffsets' in data) || (data.chordGridOffsets is map && data.chordGridOffsets.size() <= 500)) &&
-        (!('syncedAt' in data) || (data.syncedAt is timestamp || (data.syncedAt is string && data.syncedAt.size() >= 1 && data.syncedAt.size() <= 64)));
+        (!('chordGridOffsets' in data) || (data.chordGridOffsets is map && data.chordGridOffsets.size() <= 500));
+    }
+
+    function isValidSavedSong(data, songId) {
+      return hasRequiredFields(songRequiredFields()) &&
+        hasOnlyAllowedFields(songRequiredFields()
+          .concat(songOptionalLayoutFields())
+          .concat(songPublicFields())
+          .concat(['syncedAt'])) &&
+        isValidSongCore(data, songId) &&
+        (!('syncedAt' in data) || (data.syncedAt is timestamp || (data.syncedAt is string && data.syncedAt.size() >= 1 && data.syncedAt.size() <= 64))) &&
+        // Optional public-sharing metadata
+        (!('isPublic' in data) || (data.isPublic is bool)) &&
+        isValidOptionalString('authorUid', 0, 128) &&
+        isValidOptionalString('authorName', 0, 120) &&
+        isValidOptionalString('publishedAt', 0, 64);
+    }
+
+    function isValidPublicSong(data, songId) {
+      return hasRequiredFields(songRequiredFields().concat(songPublicFields())) &&
+        hasOnlyAllowedFields(songRequiredFields()
+          .concat(songOptionalLayoutFields())
+          .concat(songPublicFields())) &&
+        isValidSongCore(data, songId) &&
+        data.isPublic is bool && data.isPublic == true &&
+        data.authorUid is string && data.authorUid.size() > 0 && data.authorUid.size() <= 128 &&
+        data.authorName is string && data.authorName.size() > 0 && data.authorName.size() <= 120 &&
+        data.publishedAt is string && data.publishedAt.size() > 0 && data.publishedAt.size() <= 64;
     }
 
     // ===============================================================
@@ -174,6 +208,21 @@ service cloud.firestore {
         areImmutableFieldsUnchanged(['id']) &&
         isValidSavedSong(request.resource.data, songId);
       allow delete: if isOwner(userId);
+    }
+
+    // Public chord sheets: world-readable, author-only writes
+    match /publicSongs/{songId} {
+      allow read: if true;
+      allow create: if isSignedIn() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        isValidPublicSong(request.resource.data, songId);
+      allow update: if isSignedIn() &&
+        resource.data.authorUid == request.auth.uid &&
+        request.resource.data.authorUid == resource.data.authorUid &&
+        areImmutableFieldsUnchanged(['id', 'authorUid']) &&
+        isValidPublicSong(request.resource.data, songId);
+      allow delete: if isSignedIn() &&
+        resource.data.authorUid == request.auth.uid;
     }
 
     // Default deny all other paths

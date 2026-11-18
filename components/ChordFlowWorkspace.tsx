@@ -8,23 +8,31 @@ import {
   Check,
   Download,
   ExternalLink,
+  Globe,
   Guitar,
   Library,
   Link2,
   Loader2,
   Plus,
   RotateCcw,
+  Search,
   Sparkles,
   X,
 } from 'lucide-react';
 import type { DiagramSize, DisplayMode, LayoutPreset } from '@/types/chord';
+import { useAuthStore } from '@/lib/authStore';
 import { resolveVoicing } from '@/lib/chordLibrary';
+import { publishSongToPublic, unpublishPublicSong } from '@/lib/firestoreSongs';
 import {
   cleanRawPastedText,
   detectSupportedImportUrl,
   hasRawPasteClutter,
 } from '@/lib/importers/textCleaner';
-import type { ImportedSongResponse } from '@/lib/importers/types';
+import type {
+  ImportedSongResponse,
+  ImportProvider,
+  SongSearchResult,
+} from '@/lib/importers/types';
 import { parseSong, parseSongBody } from '@/lib/parser';
 import { computeKeyInfo } from '@/lib/sheet';
 import {
@@ -83,7 +91,9 @@ export function ChordFlowWorkspace() {
     setChordGridOffset,
     resetChordGridOffsets,
     saveCurrentSong,
+    setSongPublicState,
   } = useChordFlowStore();
+  const { user, setAuthDialogOpen } = useAuthStore();
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const previewMainRef = useRef<HTMLElement | null>(null);
@@ -91,6 +101,7 @@ export function ChordFlowWorkspace() {
   const [newChordFrets, setNewChordFrets] = useState('');
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [editingChord, setEditingChord] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [toastState, setToastState] = useState<{
@@ -110,10 +121,15 @@ export function ChordFlowWorkspace() {
     }, 2000);
   };
 
-  // URL Importer & Raw-Paste Cleaner state
+  // URL Importer, Multi-Source Song Search & Raw-Paste Cleaner state
   const [importUrl, setImportUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SongSearchResult[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [failedImportUrl, setFailedImportUrl] = useState<string | null>(null);
+  const searchContainerRef = useRef<HTMLFormElement | null>(null);
   const [importedMeta, setImportedMeta] = useState<{
     provider: ImportedSongResponse['provider'];
     sourceUrl: string;
@@ -186,17 +202,73 @@ export function ChordFlowWorkspace() {
     setCapoOverride(generatedCapo);
   };
 
+  const activeSavedSong = useMemo(
+    () => savedSongs.find((s) => s.id === activeSavedSongId) ?? null,
+    [savedSongs, activeSavedSongId],
+  );
+  const isCurrentSongPublic = Boolean(activeSavedSong?.isPublic);
+
   const handleSaveSong = () => {
-    saveCurrentSong({
+    const savedId = saveCurrentSong({
       title: parsedSong.title,
       artist: parsedSong.artist,
       lastPlayedKey: selectedKey,
       shapeKey: keyInfo.shapeKey,
       capo: effectiveCapo,
     });
+    const updated = useChordFlowStore.getState().savedSongs.find((s) => s.id === savedId);
+    if (updated?.isPublic && user?.uid) {
+      const authorName =
+        user.displayName?.trim() || user.email?.split('@')[0] || 'ChordFlow Musician';
+      void publishSongToPublic(user.uid, authorName, updated).catch(() => {});
+    }
     setJustSaved(true);
     triggerToast('Saved', 'saved');
     window.setTimeout(() => setJustSaved(false), 1800);
+  };
+
+  const handleTogglePublicShare = async () => {
+    if (!user) {
+      setAuthDialogOpen(true);
+      return;
+    }
+    try {
+      setIsPublishing(true);
+      const savedId = saveCurrentSong({
+        title: parsedSong.title,
+        artist: parsedSong.artist,
+        lastPlayedKey: selectedKey,
+        shapeKey: keyInfo.shapeKey,
+        capo: effectiveCapo,
+      });
+      const currentSong = useChordFlowStore.getState().savedSongs.find((s) => s.id === savedId);
+      if (!currentSong) return;
+
+      const authorName =
+        user.displayName?.trim() || user.email?.split('@')[0] || 'ChordFlow Musician';
+
+      if (currentSong.isPublic) {
+        await unpublishPublicSong(user.uid, currentSong);
+        setSongPublicState(savedId, {
+          isPublic: false,
+          authorUid: currentSong.authorUid,
+          authorName: currentSong.authorName,
+          publishedAt: currentSong.publishedAt,
+        });
+        triggerToast('Removed from public library', 'reset');
+      } else {
+        const published = await publishSongToPublic(user.uid, authorName, currentSong);
+        setSongPublicState(savedId, {
+          isPublic: true,
+          authorUid: published.authorUid,
+          authorName: published.authorName,
+          publishedAt: published.publishedAt,
+        });
+        triggerToast('Published to public library', 'saved');
+      }
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const handleAddOverride = (e: React.FormEvent) => {
@@ -212,23 +284,60 @@ export function ChordFlowWorkspace() {
     triggerToast('Saved', 'saved');
   };
 
+  const formatProviderLabel = (provider: ImportProvider): string => {
+    switch (provider) {
+      case 'youtube':
+        return 'YouTube';
+      case 'pnwchords':
+        return 'PNW Chords';
+      case 'worshiptogether':
+        return 'WorshipTogether';
+      case 'ultimate-guitar':
+      default:
+        return 'Ultimate Guitar';
+    }
+  };
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setSearchOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSearchOpen(false);
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [searchOpen]);
+
   const performUrlImport = async (targetUrl: string) => {
     const trimmed = targetUrl.trim();
     if (!trimmed) {
-      setImportError('Paste a YouTube, PNW Chords, or Ultimate Guitar song link first.');
+      setImportError('Enter a song title/artist to search or paste a direct song link.');
       return;
     }
     const detected = detectSupportedImportUrl(trimmed);
     if (!detected) {
       setImportError(
-        'Unsupported link. Please paste a song URL from youtube.com, youtu.be, pnwchords.com, or ultimate-guitar.com.',
+        'Unsupported link. Please paste a song URL from youtube.com, youtu.be, pnwchords.com, ultimate-guitar.com, or worshiptogether.com.',
       );
       return;
     }
 
     try {
       setIsImporting(true);
+      setSearchOpen(false);
       setImportError(null);
+      setFailedImportUrl(null);
       const res = await fetch('/api/import-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,8 +345,10 @@ export function ChordFlowWorkspace() {
       });
       const data = (await res.json().catch(() => ({}))) as Partial<ImportedSongResponse> & {
         error?: string;
+        code?: string;
       };
       if (!res.ok || !data.formattedText) {
+        setFailedImportUrl(detected.url);
         setImportError(
           data.error ||
             'Could not import that link automatically. Copy the page text (Cmd+A / Ctrl+A) into the Song box below and click "Clean & Format Pasted Text".',
@@ -261,6 +372,7 @@ export function ChordFlowWorkspace() {
       });
       setImportUrl('');
     } catch {
+      setFailedImportUrl(detected.url);
       setImportError(
         'Network error while importing link. You can paste the copied page text below and click "Clean & Format Pasted Text".',
       );
@@ -269,9 +381,45 @@ export function ChordFlowWorkspace() {
     }
   };
 
+  const performSongSearch = async (query: string) => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setImportError('Enter a song title/artist to search or paste a direct song link.');
+      return;
+    }
+    try {
+      setIsSearching(true);
+      setImportError(null);
+      setFailedImportUrl(null);
+      const res = await fetch(`/api/search-songs?q=${encodeURIComponent(trimmed)}`);
+      const data = (await res.json().catch(() => ({}))) as {
+        results?: SongSearchResult[];
+        error?: string;
+      };
+      const list = Array.isArray(data.results) ? data.results : [];
+      setSearchResults(list);
+      setSearchOpen(true);
+      if (list.length === 0) {
+        setImportError(
+          `No chord sheets found for "${trimmed}". Try adding the artist name or paste a direct URL.`,
+        );
+      }
+    } catch {
+      setImportError('Unable to search songs right now. Try pasting a direct song URL.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   const handleImportSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    void performUrlImport(importUrl);
+    const trimmed = importUrl.trim();
+    const detected = detectSupportedImportUrl(trimmed);
+    if (detected) {
+      void performUrlImport(detected.url);
+    } else {
+      void performSongSearch(trimmed);
+    }
   };
 
   const handleCleanPastedText = () => {
@@ -341,6 +489,32 @@ export function ChordFlowWorkspace() {
             )}
           </button>
 
+          <button
+            type="button"
+            disabled={isPublishing}
+            onClick={() => void handleTogglePublicShare()}
+            title={
+              isCurrentSongPublic
+                ? 'Published in the public song library — click to unpublish'
+                : 'Publish this song to the community public library'
+            }
+            className={`inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60 ${
+              isCurrentSongPublic
+                ? 'border-honey-deep/60 bg-honey-tint text-primary hover:bg-honey/25'
+                : 'border-primary/25 bg-surface text-primary hover:border-primary/50 hover:bg-sage'
+            }`}
+          >
+            {isPublishing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />
+            ) : (
+              <Globe
+                className={`h-3.5 w-3.5 ${isCurrentSongPublic ? 'text-primary' : 'text-muted'}`}
+                aria-hidden="true"
+              />
+            )}
+            <span>{isCurrentSongPublic ? 'Published' : 'Share publicly'}</span>
+          </button>
+
           <Link
             href="/saved"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/25 bg-surface px-3.5 text-xs font-medium text-primary transition hover:border-primary/50 hover:bg-sage focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey"
@@ -383,21 +557,38 @@ export function ChordFlowWorkspace() {
               ) : null
             }
           >
-            {/* URL Import Bar */}
-            <form onSubmit={handleImportSubmit} className="space-y-2 pr-3">
+            {/* Unified Song Search & URL Import Bar */}
+            <form
+              ref={searchContainerRef}
+              onSubmit={handleImportSubmit}
+              className="relative space-y-2 pr-3"
+            >
               <label htmlFor="song-import-url" className="sr-only">
-                Paste YouTube, PNW Chords, or Ultimate Guitar link to import and format
+                Search song or artist, or paste a YouTube, PNW Chords, Ultimate Guitar, or
+                WorshipTogether link
               </label>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Link2
-                    className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted"
-                    aria-hidden="true"
-                  />
+                  {detectSupportedImportUrl(importUrl) ? (
+                    <Link2
+                      className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Search
+                      className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+                      aria-hidden="true"
+                    />
+                  )}
                   <input
                     id="song-import-url"
-                    type="url"
+                    type="text"
                     value={importUrl}
+                    onFocus={() => {
+                      if (searchResults.length > 0 && !detectSupportedImportUrl(importUrl)) {
+                        setSearchOpen(true);
+                      }
+                    }}
                     onChange={(e) => {
                       setImportUrl(e.target.value);
                       if (importError) setImportError(null);
@@ -410,37 +601,86 @@ export function ChordFlowWorkspace() {
                         void performUrlImport(pasted);
                       }
                     }}
-                    placeholder="Paste YouTube, PNW Chords, or Ultimate Guitar link…"
+                    placeholder="Search song/artist or paste URL…"
                     className={`${inputClass} py-1.5 pr-2.5 pl-8 text-xs`}
                   />
                 </div>
                 <button
                   type="submit"
-                  disabled={isImporting}
-                  className="inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-base transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60"
+                  disabled={isImporting || isSearching}
+                  className="inline-flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-base transition hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-honey disabled:cursor-wait disabled:opacity-60"
                 >
                   {isImporting ? (
                     <>
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                       <span>Importing…</span>
                     </>
-                  ) : (
+                  ) : isSearching ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      <span>Searching…</span>
+                    </>
+                  ) : detectSupportedImportUrl(importUrl) ? (
                     <span>Import</span>
+                  ) : (
+                    <span>Search</span>
                   )}
                 </button>
               </div>
+
+              {/* Search Results Dropdown Popover */}
+              {searchOpen && searchResults.length > 0 && (
+                <div
+                  role="listbox"
+                  aria-label="Song search results"
+                  className="absolute top-full right-3 left-0 z-30 mt-1.5 max-h-72 overflow-y-auto rounded-xl border border-warm-border bg-surface p-1.5 shadow-[0_12px_32px_rgba(26,56,43,0.16)] transition-all duration-150 ease-out starting:scale-95 starting:opacity-0"
+                >
+                  <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-semibold tracking-wider text-muted uppercase">
+                    <span>Select a song to import</span>
+                    <button
+                      type="button"
+                      onClick={() => setSearchOpen(false)}
+                      aria-label="Close search results"
+                      className="rounded p-0.5 text-muted hover:bg-sage hover:text-primary"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </div>
+                  {searchResults.map((item) => (
+                    <button
+                      key={item.url}
+                      type="button"
+                      role="option"
+                      aria-selected={false}
+                      onClick={() => {
+                        setSearchOpen(false);
+                        setImportUrl(item.url);
+                        void performUrlImport(item.url);
+                      }}
+                      className="flex w-full cursor-pointer items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-sage/75 focus-visible:bg-sage/75 focus-visible:outline-none"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold text-primary">
+                          {item.title}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted">
+                          {item.artist}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded-full border border-primary/20 bg-sage px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        {formatProviderLabel(item.provider)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </form>
 
             {/* Imported Provider Status Pill */}
             {importedMeta && (
               <div className="mr-3 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-sage px-3 py-1.5 text-xs text-primary">
                 <span className="font-medium">
-                  Imported from{' '}
-                  {importedMeta.provider === 'youtube'
-                    ? 'YouTube'
-                    : importedMeta.provider === 'pnwchords'
-                      ? 'PNW Chords'
-                      : 'Ultimate Guitar'}
+                  Imported from {formatProviderLabel(importedMeta.provider)}
                 </span>
                 <a
                   href={importedMeta.sourceUrl}
@@ -468,7 +708,7 @@ export function ChordFlowWorkspace() {
               </div>
             )}
 
-            {/* Dismissible Import Error Alert + Raw Paste Cleaner Fallback */}
+            {/* Dismissible Import Error Alert + Open Link / Raw Paste Cleaner Fallback */}
             {importError && (
               <div
                 role="alert"
@@ -478,13 +718,29 @@ export function ChordFlowWorkspace() {
                   <p className="leading-relaxed font-medium">{importError}</p>
                   <button
                     type="button"
-                    onClick={() => setImportError(null)}
+                    onClick={() => {
+                      setImportError(null);
+                      setFailedImportUrl(null);
+                    }}
                     aria-label="Dismiss import alert"
                     className="rounded p-0.5 text-muted hover:bg-sage hover:text-primary"
                   >
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 </div>
+                {failedImportUrl && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href={failedImportUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-surface px-2.5 py-1 text-[11px] font-semibold text-primary transition hover:border-primary/50 hover:bg-sage"
+                    >
+                      <span>Open link in new tab</span>
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 

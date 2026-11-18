@@ -12,6 +12,8 @@ const ALLOWED_HOSTS: Record<string, ImportProvider> = {
   'www.youtube.com': 'youtube',
   'm.youtube.com': 'youtube',
   'youtu.be': 'youtube',
+  'worshiptogether.com': 'worshiptogether',
+  'www.worshiptogether.com': 'worshiptogether',
 };
 
 /** Checks whether a hostname belongs to a supported chord provider. */

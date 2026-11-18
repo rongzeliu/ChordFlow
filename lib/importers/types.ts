@@ -1,4 +1,4 @@
-export type ImportProvider = 'pnwchords' | 'ultimate-guitar' | 'youtube';
+export type ImportProvider = 'pnwchords' | 'ultimate-guitar' | 'youtube' | 'worshiptogether';
 
 export interface ImportedSongResponse {
   title: string;
@@ -10,4 +10,13 @@ export interface ImportedSongResponse {
   formattedText: string;
   provider: ImportProvider;
   sourceUrl: string;
+}
+
+export interface SongSearchResult {
+  title: string;
+  artist: string;
+  url: string;
+  provider: ImportProvider;
+  subtitle?: string;
+  key?: string;
 }
