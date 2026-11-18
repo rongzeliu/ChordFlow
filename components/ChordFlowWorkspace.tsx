@@ -13,6 +13,7 @@ import {
   Library,
   Link2,
   Loader2,
+  Music,
   Plus,
   RotateCcw,
   Search,
@@ -286,6 +287,12 @@ export function ChordFlowWorkspace() {
 
   const formatProviderLabel = (provider: ImportProvider): string => {
     switch (provider) {
+      case 'spotify':
+        return 'Spotify';
+      case 'itunes':
+        return 'Apple Music';
+      case 'gemini':
+        return 'AI Chord Sheet';
       case 'youtube':
         return 'YouTube';
       case 'pnwchords':
@@ -319,14 +326,64 @@ export function ChordFlowWorkspace() {
     };
   }, [searchOpen]);
 
-  const performUrlImport = async (targetUrl: string) => {
+  // 300ms debounced live autocomplete for song/artist queries
+  useEffect(() => {
+    const trimmed = importUrl.trim();
+    if (
+      trimmed.length < 2 ||
+      detectSupportedImportUrl(trimmed) !== null ||
+      /^https?:\/\//i.test(trimmed) ||
+      isImporting
+    ) {
+      if (trimmed.length === 0) {
+        setSearchResults([]);
+        setSearchOpen(false);
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setIsSearching(true);
+        const res = await fetch(`/api/search-songs?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          results?: SongSearchResult[];
+        };
+        if (controller.signal.aborted) return;
+        const list = Array.isArray(data.results) ? data.results : [];
+        setSearchResults(list);
+        if (list.length > 0) {
+          setSearchOpen(true);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsSearching(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [importUrl, isImporting]);
+
+  const performUrlImport = async (
+    targetUrl: string,
+    catalogMeta?: { title: string; artist: string },
+  ) => {
     const trimmed = targetUrl.trim();
-    if (!trimmed) {
+    if (!trimmed && !catalogMeta) {
       setImportError('Enter a song title/artist to search or paste a direct song link.');
       return;
     }
-    const detected = detectSupportedImportUrl(trimmed);
-    if (!detected) {
+    const detected = trimmed ? detectSupportedImportUrl(trimmed) : null;
+    if (!detected && !catalogMeta) {
       setImportError(
         'Unsupported link. Please paste a song URL from youtube.com, youtu.be, pnwchords.com, ultimate-guitar.com, or worshiptogether.com.',
       );
@@ -341,14 +398,18 @@ export function ChordFlowWorkspace() {
       const res = await fetch('/api/import-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: detected.url }),
+        body: JSON.stringify({
+          url: detected ? detected.url : trimmed,
+          title: catalogMeta?.title,
+          artist: catalogMeta?.artist,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as Partial<ImportedSongResponse> & {
         error?: string;
         code?: string;
       };
       if (!res.ok || !data.formattedText) {
-        setFailedImportUrl(detected.url);
+        if (detected) setFailedImportUrl(detected.url);
         setImportError(
           data.error ||
             'Could not import that link automatically. Copy the page text (Cmd+A / Ctrl+A) into the Song box below and click "Clean & Format Pasted Text".',
@@ -367,12 +428,13 @@ export function ChordFlowWorkspace() {
         capo: typeof data.capo === 'number' ? data.capo : 0,
       });
       setImportedMeta({
-        provider: data.provider ?? detected.provider,
-        sourceUrl: data.sourceUrl ?? detected.url,
+        provider: data.provider ?? detected?.provider ?? 'gemini',
+        sourceUrl: data.sourceUrl ?? detected?.url ?? trimmed,
       });
       setImportUrl('');
+      setSearchResults([]);
     } catch {
-      setFailedImportUrl(detected.url);
+      if (detected) setFailedImportUrl(detected.url);
       setImportError(
         'Network error while importing link. You can paste the copied page text below and click "Clean & Format Pasted Text".',
       );
@@ -648,23 +710,37 @@ export function ChordFlowWorkspace() {
                   </div>
                   {searchResults.map((item) => (
                     <button
-                      key={item.url}
+                      key={`${item.provider}-${item.id ?? item.url}`}
                       type="button"
                       role="option"
                       aria-selected={false}
                       onClick={() => {
                         setSearchOpen(false);
-                        setImportUrl(item.url);
-                        void performUrlImport(item.url);
+                        void performUrlImport(item.url, {
+                          title: item.title,
+                          artist: item.artist,
+                        });
                       }}
                       className="flex w-full cursor-pointer items-center justify-between gap-2.5 rounded-lg px-2.5 py-2 text-left transition hover:bg-sage/75 focus-visible:bg-sage/75 focus-visible:outline-none"
                     >
+                      {item.artworkUrl ? (
+                        <img
+                          src={item.artworkUrl}
+                          alt=""
+                          className="h-9 w-9 shrink-0 rounded-md border border-warm-border object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-warm-border bg-sage text-muted">
+                          <Music className="h-4 w-4" aria-hidden="true" />
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-semibold text-primary">
                           {item.title}
                         </span>
                         <span className="block truncate text-[11px] text-muted">
                           {item.artist}
+                          {item.album ? ` · ${item.album}` : ''}
                         </span>
                       </span>
                       <span className="shrink-0 rounded-full border border-primary/20 bg-sage px-2 py-0.5 text-[10px] font-semibold text-primary">

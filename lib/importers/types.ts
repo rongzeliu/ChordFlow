@@ -1,4 +1,11 @@
-export type ImportProvider = 'pnwchords' | 'ultimate-guitar' | 'youtube' | 'worshiptogether';
+export type ImportProvider =
+  | 'pnwchords'
+  | 'ultimate-guitar'
+  | 'youtube'
+  | 'worshiptogether'
+  | 'spotify'
+  | 'itunes'
+  | 'gemini';
 
 export interface ImportedSongResponse {
   title: string;
@@ -13,8 +20,12 @@ export interface ImportedSongResponse {
 }
 
 export interface SongSearchResult {
+  id?: string;
   title: string;
   artist: string;
+  album?: string;
+  artworkUrl?: string;
+  durationMs?: number;
   url: string;
   provider: ImportProvider;
   subtitle?: string;

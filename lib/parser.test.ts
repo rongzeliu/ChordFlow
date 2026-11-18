@@ -21,6 +21,10 @@ import {
   parseYouTubeSearchResultsHtml,
   rankAndDedupeSearchResults,
 } from './importers/search';
+import {
+  parseItunesTracksResponse,
+  parseSpotifyTracksResponse,
+} from './importers/spotify';
 import { cleanRawPastedText, detectSupportedImportUrl } from './importers/textCleaner';
 import { parseUltimateGuitarHtml } from './importers/ultimateGuitar';
 import { parseWorshipTogetherHtml } from './importers/worshipTogether';
@@ -823,5 +827,93 @@ describe('Firebase Auth & Firestore song persistence helpers', () => {
     });
     expect(initialPublicList).toEqual([]);
     unsub();
+  });
+
+  it('normalizes Spotify & iTunes track catalog results and merges catalog artwork with direct PNW Chords URLs', () => {
+    const spotifyTracks = parseSpotifyTracksResponse({
+      tracks: {
+        items: [
+          {
+            id: 'sp-1',
+            name: 'Build My Life',
+            duration_ms: 356000,
+            external_urls: { spotify: 'https://open.spotify.com/track/sp-1' },
+            artists: [{ name: 'Pat Barrett' }],
+            album: {
+              name: 'Pat Barrett',
+              images: [
+                { url: 'https://i.scdn.co/image/large.jpg', width: 640, height: 640 },
+                { url: 'https://i.scdn.co/image/small.jpg', width: 64, height: 64 },
+              ],
+            },
+          },
+          // Duplicate title + artist row should be deduplicated
+          {
+            id: 'sp-1-dup',
+            name: 'Build My Life',
+            duration_ms: 356000,
+            external_urls: { spotify: 'https://open.spotify.com/track/sp-1-dup' },
+            artists: [{ name: 'Pat Barrett' }],
+            album: { name: 'Live', images: [] },
+          },
+        ],
+      },
+    });
+
+    expect(spotifyTracks).toHaveLength(1);
+    expect(spotifyTracks[0]).toEqual({
+      id: 'sp-1',
+      title: 'Build My Life',
+      artist: 'Pat Barrett',
+      album: 'Pat Barrett',
+      artworkUrl: 'https://i.scdn.co/image/small.jpg',
+      durationMs: 356000,
+      url: 'https://open.spotify.com/track/sp-1',
+      provider: 'spotify',
+    });
+
+    const itunesTracks = parseItunesTracksResponse({
+      results: [
+        {
+          trackId: 99123,
+          trackName: 'Goodness of God (Live)',
+          artistName: 'Bethel Music & Jenn Johnson',
+          collectionName: 'Victory (Live)',
+          artworkUrl100: 'https://is1-ssl.mzstatic.com/image/thumb/100x100bb.jpg',
+          trackTimeMillis: 296000,
+          trackViewUrl: 'https://music.apple.com/us/album/goodness-of-god/99123',
+        },
+      ],
+    });
+
+    expect(itunesTracks).toHaveLength(1);
+    expect(itunesTracks[0]).toMatchObject({
+      id: '99123',
+      title: 'Goodness of God (Live)',
+      artist: 'Bethel Music & Jenn Johnson',
+      album: 'Victory (Live)',
+      artworkUrl: 'https://is1-ssl.mzstatic.com/image/thumb/100x100bb.jpg',
+      provider: 'itunes',
+    });
+
+    // Merging a Spotify catalog match with an exact PNW Chords match keeps artwork + album while upgrading to direct chord URL
+    const merged = rankAndDedupeSearchResults(
+      [
+        spotifyTracks[0],
+        {
+          title: 'Build My Life',
+          artist: 'Pat Barrett',
+          url: 'https://www.pnwchords.com/build-my-life-pat-barrett/',
+          provider: 'pnwchords',
+        },
+      ],
+      'Build My Life Pat Barrett',
+    );
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0].provider).toBe('pnwchords');
+    expect(merged[0].url).toBe('https://www.pnwchords.com/build-my-life-pat-barrett/');
+    expect(merged[0].artworkUrl).toBe('https://i.scdn.co/image/small.jpg');
+    expect(merged[0].album).toBe('Pat Barrett');
   });
 });

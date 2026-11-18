@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { parsePnwChordsHtml } from '@/lib/importers/pnwChords';
+import {
+  generateSongChordsWithGemini,
+  resolveCatalogSongChordSheet,
+} from '@/lib/importers/search';
 import { detectSupportedImportUrl } from '@/lib/importers/textCleaner';
 import { parseUltimateGuitarHtml } from '@/lib/importers/ultimateGuitar';
 import { parseWorshipTogetherHtml } from '@/lib/importers/worshipTogether';
@@ -10,14 +14,30 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { url?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      url?: string;
+      title?: string;
+      artist?: string;
+    };
     const rawUrl = body.url?.trim() ?? '';
+    const title = body.title?.trim() ?? '';
+    const artist = body.artist?.trim() ?? '';
+
+    // Two-stage catalog selection: resolve by canonical Song Title + Artist (and optional URL)
+    if (title && artist) {
+      const resolved = await resolveCatalogSongChordSheet({
+        title,
+        artist,
+        url: rawUrl || undefined,
+      });
+      return NextResponse.json(resolved);
+    }
 
     if (!rawUrl) {
       return NextResponse.json(
         {
           error:
-            'Please enter a YouTube, PNW Chords, Ultimate Guitar, or WorshipTogether song URL.',
+            'Please enter a song title/artist or paste a YouTube, PNW Chords, Ultimate Guitar, or WorshipTogether URL.',
         },
         { status: 400 },
       );
@@ -71,14 +91,31 @@ export async function POST(request: Request) {
     }
 
     const html = await response.text();
-    const imported =
-      detected.provider === 'pnwchords'
-        ? parsePnwChordsHtml(html, detected.url)
-        : detected.provider === 'worshiptogether'
-          ? parseWorshipTogetherHtml(html, detected.url)
-          : parseUltimateGuitarHtml(html, detected.url);
+    try {
+      const imported =
+        detected.provider === 'pnwchords'
+          ? parsePnwChordsHtml(html, detected.url)
+          : detected.provider === 'worshiptogether'
+            ? parseWorshipTogetherHtml(html, detected.url)
+            : parseUltimateGuitarHtml(html, detected.url);
 
-    return NextResponse.json(imported);
+      return NextResponse.json(imported);
+    } catch (parseErr) {
+      // If WorshipTogether page requires login and GEMINI_API_KEY is available, infer title from URL slug
+      if (detected.provider === 'worshiptogether' && process.env.GEMINI_API_KEY?.trim()) {
+        const slug = new URL(detected.url).pathname
+          .split('/')
+          .filter(Boolean)
+          .pop()
+          ?.replace(/[-_]+/g, ' ')
+          .trim();
+        if (slug) {
+          const generated = await generateSongChordsWithGemini(slug, 'Worship Together', detected.url);
+          return NextResponse.json(generated);
+        }
+      }
+      throw parseErr;
+    }
   } catch (err) {
     if (err instanceof MissingGeminiApiKeyError) {
       return NextResponse.json(
