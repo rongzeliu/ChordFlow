@@ -8,6 +8,7 @@ import { parseWorshipTogetherHtml } from './worshipTogether';
 import {
   extractYouTubeChordsWithGemini,
   formatGeminiYouTubeSheet,
+  generateContentWithGeminiFallback,
   MissingGeminiApiKeyError,
   type GeminiYouTubeChordSheet,
 } from './youtube';
@@ -217,7 +218,7 @@ export async function searchSongsAcrossProviders(query: string): Promise<SongSea
 
 /**
  * Generates an accurate guitar chord and lyric sheet for a canonical `title` + `artist`
- * using Gemini (`gemini-4.0-hydrogen`).
+ * using Gemini (`gemini-3.8-flash` by default, with automatic fallback).
  */
 export async function generateSongChordsWithGemini(
   title: string,
@@ -241,8 +242,7 @@ Follow these strict rules:
    - For instrumental lines (such as Intro/Outro), provide the chord progression in \`chords\` (e.g. "G  D/F#  Em7  C") and leave \`lyrics\` empty.
    - Never put non-chord words on a chord line.`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-4.0-hydrogen',
+  const response = await generateContentWithGeminiFallback(ai, {
     contents: prompt,
     config: {
       responseMimeType: 'application/json',

@@ -107,8 +107,58 @@ export function formatGeminiYouTubeSheet(
   };
 }
 
+export const GEMINI_FALLBACK_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+] as const;
+
+function isModelNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes('NOT_FOUND') ||
+    msg.includes('404') ||
+    msg.includes('is not found for API version') ||
+    msg.includes('not supported for generateContent')
+  );
+}
+
 /**
- * Extracts chords, lyrics, key, and capo from a YouTube video URL using Gemini (`gemini-4.0-hydrogen`).
+ * Calls `ai.models.generateContent` trying `GEMINI_MODEL` (if set) and then
+ * `GEMINI_FALLBACK_MODELS` in order, falling back automatically on 404 / NOT_FOUND.
+ */
+export async function generateContentWithGeminiFallback(
+  ai: GoogleGenAI,
+  request: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>,
+) {
+  const envModel = process.env.GEMINI_MODEL?.trim();
+  const candidates = Array.from(
+    new Set([...(envModel ? [envModel] : []), ...GEMINI_FALLBACK_MODELS]),
+  );
+
+  let lastError: unknown;
+  for (let i = 0; i < candidates.length; i++) {
+    const model = candidates[i];
+    try {
+      return await ai.models.generateContent({
+        ...request,
+        model,
+      });
+    } catch (err) {
+      lastError = err;
+      if (i < candidates.length - 1 && isModelNotFoundError(err)) {
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError ?? new Error('No compatible Gemini model was available.');
+}
+
+/**
+ * Extracts chords, lyrics, key, and capo from a YouTube video URL using Gemini
+ * (`gemini-3.8-flash` by default, with automatic fallback).
  */
 export async function extractYouTubeChordsWithGemini(
   youtubeUrl: string,
@@ -119,8 +169,7 @@ export async function extractYouTubeChordsWithGemini(
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: 'gemini-4.0-hydrogen',
+  const response = await generateContentWithGeminiFallback(ai, {
     contents: [
       {
         role: 'user',
