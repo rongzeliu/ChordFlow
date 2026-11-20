@@ -108,7 +108,7 @@ export function formatGeminiYouTubeSheet(
 }
 
 /**
- * Extracts chords, lyrics, key, and capo from a YouTube video URL using Gemini (`gemini-2.5-flash`).
+ * Extracts chords, lyrics, key, and capo from a YouTube video URL using Gemini (`gemini-4.0-hydrogen`).
  */
 export async function extractYouTubeChordsWithGemini(
   youtubeUrl: string,
@@ -120,7 +120,7 @@ export async function extractYouTubeChordsWithGemini(
 
   const ai = new GoogleGenAI({ apiKey });
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-4.0-hydrogen',
     contents: [
       {
         role: 'user',
