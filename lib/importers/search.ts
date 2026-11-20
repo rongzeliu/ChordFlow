@@ -217,7 +217,7 @@ export async function searchSongsAcrossProviders(query: string): Promise<SongSea
 
 /**
  * Generates an accurate guitar chord and lyric sheet for a canonical `title` + `artist`
- * using Gemini (`gemini-2.5-flash`).
+ * using Gemini (`gemini-4.0-hydrogen`).
  */
 export async function generateSongChordsWithGemini(
   title: string,
@@ -242,7 +242,7 @@ Follow these strict rules:
    - Never put non-chord words on a chord line.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
+    model: 'gemini-4.0-hydrogen',
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
