@@ -81,6 +81,14 @@ export interface SheetPlan {
   displayMode: DisplayMode;
 }
 
+export function isStandardTuning(tuning?: string): boolean {
+  if (!tuning) return true;
+  const compact = tuning
+    .toLowerCase()
+    .replace(/[^a-z#]/g, '');
+  return !compact || compact === 'eadgbe' || compact === 'standard' || compact === 'standardeadgbe';
+}
+
 export function computeKeyInfo(song: ParsedSong, capo: number): KeyInfo {
   const firstChord = song.lines.flatMap((l) => l.tokens).find((t) => t.chord)?.chord;
   const shapeKey = song.key ?? guessKeyFromChord(firstChord);

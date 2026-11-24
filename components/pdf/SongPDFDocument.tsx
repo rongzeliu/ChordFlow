@@ -8,7 +8,7 @@ import type {
   PageSize,
   ParsedSong,
 } from '@/types/chord';
-import { planSheet } from '@/lib/sheet';
+import { isStandardTuning, planSheet } from '@/lib/sheet';
 import { fretsToString } from '@/lib/voicing';
 import { PDFFretboardSvg } from './PDFFretboardSvg';
 
@@ -130,9 +130,18 @@ export const SongPDFDocument = ({
       color: '#78716c',
       marginTop: 3,
     },
+    metaBlock: {
+      flexDirection: 'column',
+      alignItems: 'flex-end',
+    },
     metaPrimary: {
       fontSize: 9 * scale,
       color: '#78716c',
+    },
+    metaSecondary: {
+      fontSize: 8.5 * scale,
+      color: '#78716c',
+      marginTop: 2,
     },
     glossaryGrid: {
       flexDirection: 'row',
@@ -388,7 +397,12 @@ export const SongPDFDocument = ({
             <Text style={styles.title}>{plan.title}</Text>
             {plan.artist ? <Text style={styles.artist}>{plan.artist}</Text> : null}
           </View>
-          <Text style={styles.metaPrimary}>{plan.keyInfo.summary}</Text>
+          <View style={styles.metaBlock}>
+            <Text style={styles.metaPrimary}>{plan.keyInfo.summary}</Text>
+            {plan.tuning && !isStandardTuning(plan.tuning) ? (
+              <Text style={styles.metaSecondary}>Tuning: {plan.tuning}</Text>
+            ) : null}
+          </View>
         </View>
 
         {showTopGlossary && (

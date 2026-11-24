@@ -13,7 +13,7 @@ import { computeBaseFret, detectBarre, parseFretString } from './voicing';
 import { buildFretboardGeometry, GRID } from './fretboard';
 import { getVoicingCandidates, resolveVoicing } from './chordLibrary';
 import { calculateCapoForKey, isChord, parseChordName, transposeChord, transposeKey } from './music';
-import { planSheet } from './sheet';
+import { isStandardTuning, planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
 import { parsePnwChordsHtml } from './importers/pnwChords';
 import {
@@ -520,6 +520,8 @@ Jesus be the Name, Jesus be the Name</pre>
     expect(res.artist).toBe('Jeff Buckley');
     expect(res.key).toBe('C'); // Shape key C + Capo 1 -> Concert Key Db
     expect(res.capo).toBe(1);
+    expect(res.formattedText).toContain('Capo: 1');
+    expect(res.formattedText).not.toContain('Tuning: E A D G B E');
     expect(res.formattedText).toContain('  C                 Am\nI heard there was a secret chord');
 
     const parsed = parseSong(res.formattedText);
@@ -530,6 +532,46 @@ Jesus be the Name, Jesus be the Name</pre>
       capo: res.capo ?? 0,
     });
     expect(plan.keyInfo.summary).toBe('Capo 1: C Shapes / Concert Key: Db');
+
+    // Non-standard tuning + string capo ("2nd fret") are both included in the song header
+    const altTuningPayload = {
+      store: {
+        page: {
+          data: {
+            tab: {
+              song_name: 'Everlong',
+              artist_name: 'Foo Fighters',
+              tonality_name: 'D',
+            },
+            tab_view: {
+              meta: {
+                capo: '2nd fret',
+                tuning: { name: 'Drop D', value: 'D A D G B E' },
+              },
+              wiki_tab: {
+                content: '[Verse 1]\n[ch]D[/ch]       [ch]Bm[/ch]\nHello, I waited here for you',
+              },
+            },
+          },
+        },
+      },
+    };
+    const altEncoded = JSON.stringify(altTuningPayload)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;');
+    const altRes = parseUltimateGuitarHtml(
+      `<div class="js-store" data-content="${altEncoded}"></div>`,
+      'https://tabs.ultimate-guitar.com/tab/foo-fighters/everlong-chords-1',
+    );
+    expect(altRes.capo).toBe(2);
+    expect(altRes.tuning).toBe('Drop D (D A D G B E)');
+    expect(altRes.formattedText).toContain('Capo: 2');
+    expect(altRes.formattedText).toContain('Tuning: Drop D (D A D G B E)');
+    expect(isStandardTuning(altRes.tuning)).toBe(false);
+    expect(isStandardTuning('E A D G B E')).toBe(true);
+    const altParsed = parseSong(altRes.formattedText);
+    expect(altParsed.tuning).toBe('Drop D (D A D G B E)');
+    expect(altParsed.capo).toBe(2);
   });
 
   it('cleans raw copy-pasted PNW Chords text with UI noise and unbracketed section labels', () => {

@@ -72,15 +72,28 @@ export function parseUltimateGuitarHtml(html: string, sourceUrl: string): Import
     pageData?.tab?.tonality_name || pageData?.tab_view?.meta?.tonality || undefined;
 
   const rawCapo = pageData?.tab_view?.meta?.capo;
+  const capoMatch = typeof rawCapo === 'string' ? /(\d{1,2})/.exec(rawCapo) : null;
   const parsedCapo =
     typeof rawCapo === 'number'
       ? rawCapo
-      : typeof rawCapo === 'string' && /^\d+$/.test(rawCapo.trim())
-        ? parseInt(rawCapo.trim(), 10)
+      : capoMatch
+        ? parseInt(capoMatch[1], 10)
         : 0;
   const capo = Math.max(0, Math.min(11, parsedCapo));
 
-  const tuning = (pageData?.tab_view?.meta?.tuning?.value || 'E A D G B E').trim();
+  const tuningName = pageData?.tab_view?.meta?.tuning?.name?.trim() || '';
+  const tuningValue = pageData?.tab_view?.meta?.tuning?.value?.trim() || '';
+  const tuning = (() => {
+    if (
+      tuningName &&
+      !/^standard$/i.test(tuningName) &&
+      tuningValue &&
+      !tuningValue.toLowerCase().includes(tuningName.toLowerCase())
+    ) {
+      return `${tuningName} (${tuningValue})`;
+    }
+    return tuningValue || tuningName || 'E A D G B E';
+  })();
 
   // Normalize line endings, strip [tab]/[/tab] and [ch]/[/ch] while preserving exact column alignment
   const rawLines = rawContent
