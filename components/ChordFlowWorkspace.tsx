@@ -917,13 +917,13 @@ export function ChordFlowWorkspace() {
               <Field label="Capo position">
                 <div
                   aria-live="polite"
-                  className="flex h-[38px] items-center justify-between rounded-lg border border-warm-border bg-sage/65 px-3 text-sm"
+                  className="flex h-[38px] items-center justify-between gap-2 rounded-lg border border-warm-border bg-sage/65 px-3 text-sm"
                 >
-                  <span className="font-medium text-primary">
-                    {effectiveCapo === 0 ? 'Open (No capo)' : `Fret ${effectiveCapo}`}
+                  <span className="shrink-0 whitespace-nowrap font-medium text-primary">
+                    {effectiveCapo === 0 ? 'No capo' : `Fret ${effectiveCapo}`}
                   </span>
                   {keyInfo.shapeKey && (
-                    <span className="text-xs font-medium text-muted">
+                    <span className="truncate whitespace-nowrap text-xs font-medium text-muted">
                       {prettyAccidentals(keyInfo.shapeKey)} shapes
                     </span>
                   )}

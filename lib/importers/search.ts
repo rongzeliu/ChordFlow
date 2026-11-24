@@ -194,17 +194,15 @@ export function rankAndDedupeSearchResults(
 }
 
 /**
- * Searches canonical tracks via Spotify (or Apple iTunes fallback) plus PNW Chords in parallel
- * so users get instant, accurate Song Title + Artist autocomplete suggestions.
+ * Searches canonical tracks via Spotify (or Apple Music / iTunes fallback) so users get
+ * accurate Song Title + Artist autocomplete suggestions. Chords are resolved only once a
+ * track is selected (see `resolveCatalogSongChordSheet`).
  */
 export async function searchSongsAcrossProviders(query: string): Promise<SongSearchResult[]> {
   const clean = query.trim();
   if (!clean) return [];
 
-  const settled = await Promise.allSettled([
-    searchCatalogTracks(clean, 6),
-    searchPnwChords(clean),
-  ]);
+  const settled = await Promise.allSettled([searchCatalogTracks(clean, 8)]);
 
   const combined: SongSearchResult[] = [];
   for (const res of settled) {
@@ -214,6 +212,162 @@ export async function searchSongsAcrossProviders(query: string): Promise<SongSea
   }
 
   return rankAndDedupeSearchResults(combined, clean);
+}
+
+/**
+ * Strips catalog decorations such as "(Live)", "[Remastered]", "- Radio Edit", or "feat. X"
+ * from a Spotify / Apple Music track title so it matches chord-site song names.
+ */
+export function cleanCatalogTitle(title: string): string {
+  return title
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\s+[-–—]\s+.*$/, ' ')
+    .replace(/\s+(?:feat\.?|ft\.?|featuring)\s+.*$/i, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Returns the primary artist from a catalog artist string ("A, B & C feat. D" -> "A"). */
+export function primaryCatalogArtist(artist: string): string {
+  return (
+    artist
+      .split(/\s*(?:,|&|\bfeat\.?|\bft\.?|\bfeaturing\b|\bx\b|\band\b|\/)\s*/i)[0]
+      ?.trim() || artist.trim()
+  );
+}
+
+export interface UltimateGuitarSearchCandidate {
+  title: string;
+  artist: string;
+  url: string;
+  type: string;
+  votes: number;
+  rating: number;
+}
+
+interface UgSearchResultItem {
+  song_name?: string;
+  artist_name?: string;
+  type?: string;
+  tab_url?: string;
+  votes?: number;
+  rating?: number;
+  marketing_type?: string;
+}
+
+/**
+ * Parses an Ultimate Guitar search page (`/search.php`) and returns all free, text-based
+ * "Chords" results (excluding Official / Pro / Tabs entries that cannot be imported).
+ */
+export function parseUltimateGuitarSearchHtml(html: string): UltimateGuitarSearchCandidate[] {
+  const storeMatch =
+    /<div[^>]*class="[^"]*\bjs-store\b[^"]*"[^>]*data-content="([^"]+)"/i.exec(html) ??
+    /<div[^>]*data-content="([^"]+)"[^>]*class="[^"]*\bjs-store\b[^"]*"/i.exec(html);
+  if (!storeMatch?.[1]) return [];
+
+  let results: UgSearchResultItem[] = [];
+  try {
+    const parsed = JSON.parse(decodeHtmlEntities(storeMatch[1])) as {
+      store?: { page?: { data?: { results?: UgSearchResultItem[] } } };
+    };
+    results = parsed?.store?.page?.data?.results ?? [];
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(results)) return [];
+
+  const candidates: UltimateGuitarSearchCandidate[] = [];
+  const seen = new Set<string>();
+  for (const item of results) {
+    if (item?.type !== 'Chords' || item.marketing_type) continue;
+    const url = typeof item.tab_url === 'string' ? item.tab_url.trim() : '';
+    const detected = detectSupportedImportUrl(url);
+    if (!detected || detected.provider !== 'ultimate-guitar' || seen.has(detected.url)) continue;
+    seen.add(detected.url);
+    candidates.push({
+      title: (item.song_name ?? '').trim(),
+      artist: (item.artist_name ?? '').trim(),
+      url: detected.url,
+      type: item.type,
+      votes: typeof item.votes === 'number' ? item.votes : 0,
+      rating: typeof item.rating === 'number' ? item.rating : 0,
+    });
+  }
+  return candidates;
+}
+
+/**
+ * Ranks Ultimate Guitar chord candidates for a catalog `title` + `artist`. Only candidates whose
+ * song name matches the title are kept; artist matches and highly-voted/rated versions rank first.
+ */
+export function rankUltimateGuitarCandidates(
+  candidates: UltimateGuitarSearchCandidate[],
+  title: string,
+  artist: string,
+): UltimateGuitarSearchCandidate[] {
+  const normTitle = normalizeComparable(cleanCatalogTitle(title));
+  const normArtist = normalizeComparable(primaryCatalogArtist(artist));
+  const normFullArtist = normalizeComparable(artist);
+  if (!normTitle) return [];
+
+  const scored = candidates
+    .map((c) => {
+      const cTitle = normalizeComparable(c.title);
+      const cArtist = normalizeComparable(c.artist);
+      let score = 0;
+      if (cTitle === normTitle) score += 100;
+      else if (cTitle.includes(normTitle) || normTitle.includes(cTitle)) score += 50;
+      else return null;
+
+      if (normArtist && cArtist === normArtist) score += 60;
+      else if (
+        normArtist &&
+        (cArtist.includes(normArtist) ||
+          normArtist.includes(cArtist) ||
+          normFullArtist.includes(cArtist))
+      )
+        score += 35;
+
+      score += Math.log10(c.votes + 1) * 6 + c.rating;
+      return { c, score };
+    })
+    .filter((x): x is { c: UltimateGuitarSearchCandidate; score: number } => x !== null);
+
+  return scored.sort((a, b) => b.score - a.score).map((x) => x.c);
+}
+
+/** Searches Ultimate Guitar for free chord sheets matching a catalog track. */
+export async function searchUltimateGuitarChords(
+  title: string,
+  artist: string,
+): Promise<UltimateGuitarSearchCandidate[]> {
+  const cleanTitle = cleanCatalogTitle(title) || title;
+  const mainArtist = primaryCatalogArtist(artist);
+  const queries = Array.from(new Set([`${cleanTitle} ${mainArtist}`.trim(), cleanTitle]));
+
+  for (const q of queries) {
+    const html = await fetchHtmlForImport(
+      `https://www.ultimate-guitar.com/search.php?search_type=title&value=${encodeURIComponent(q)}`,
+    );
+    if (!html) continue;
+    const ranked = rankUltimateGuitarCandidates(parseUltimateGuitarSearchHtml(html), title, artist);
+    if (ranked.length > 0) return ranked;
+  }
+  return [];
+}
+
+/** Searches YouTube for the best video of a catalog track (official audio / lyric video). */
+export async function searchYouTubeForTrack(
+  title: string,
+  artist: string,
+): Promise<SongSearchResult[]> {
+  const q = `${cleanCatalogTitle(title) || title} ${primaryCatalogArtist(artist)}`.trim();
+  const html = await fetchHtmlForImport(
+    `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
+  );
+  if (!html) return [];
+  return parseYouTubeSearchResultsHtml(html, 5);
 }
 
 /**
@@ -323,9 +477,10 @@ async function fetchHtmlForImport(url: string): Promise<string | null> {
 /**
  * Resolves a canonical catalog track (`title` + `artist`, and optional `url`) into a full
  * `ImportedSongResponse`:
- *  1. Checks for a direct or matching PNW Chords sheet first.
- *  2. Checks direct supported chord URLs (WorshipTogether / Ultimate Guitar / YouTube).
- *  3. Falls back to Gemini chord & lyric generation so selecting any song in the search bar succeeds.
+ *  1. Imports a direct supported chord URL if one was provided.
+ *  2. Searches Ultimate Guitar and imports the best-matching free "Chords" sheet (priority).
+ *  3. Finds the track on YouTube and transcribes chords + lyrics from the video via Gemini.
+ *  4. Last resort: generates a chord sheet from the title/artist via Gemini.
  */
 export async function resolveCatalogSongChordSheet(params: {
   title: string;
@@ -351,32 +506,51 @@ export async function resolveCatalogSongChordSheet(params: {
         if (detected.provider === 'ultimate-guitar')
           return parseUltimateGuitarHtml(html, detected.url);
       } catch {
-        // Fall through to PNW Chords search / Gemini generation
+        // Fall through to Ultimate Guitar search / YouTube
       }
     }
   }
 
-  // 2. Check PNW Chords for an exact title match
+  // 2. Ultimate Guitar (priority): try the top-ranked free chord sheets
   try {
-    const normTargetTitle = normalizeComparable(title);
-    const pnwCandidates = await searchPnwChords(`${title} ${artist}`);
-    const match =
-      pnwCandidates.find((c) => normalizeComparable(c.title) === normTargetTitle) ??
-      pnwCandidates.find(
-        (c) =>
-          normalizeComparable(c.title).includes(normTargetTitle) ||
-          normTargetTitle.includes(normalizeComparable(c.title)),
-      );
-    if (match) {
-      const html = await fetchHtmlForImport(match.url);
-      if (html) {
-        return parsePnwChordsHtml(html, match.url);
+    const ugCandidates = await searchUltimateGuitarChords(title, artist);
+    for (const candidate of ugCandidates.slice(0, 3)) {
+      const html = await fetchHtmlForImport(candidate.url);
+      if (!html) continue;
+      try {
+        return parseUltimateGuitarHtml(html, candidate.url);
+      } catch {
+        // Try the next candidate
       }
     }
   } catch {
-    // Fall through to Gemini generation
+    // Fall through to YouTube
   }
 
-  // 3. Generate complete chord & lyric sheet via Gemini
-  return generateSongChordsWithGemini(title, artist, rawUrl);
+  // 3. YouTube: transcribe chords + lyrics from the best matching video
+  let youtubeError: unknown = null;
+  try {
+    const videos = await searchYouTubeForTrack(title, artist);
+    const normTitle = normalizeComparable(cleanCatalogTitle(title));
+    const best =
+      videos.find((v) => normalizeComparable(v.title).includes(normTitle)) ?? videos[0];
+    if (best) {
+      const imported = await extractYouTubeChordsWithGemini(best.url);
+      return {
+        ...imported,
+        title: imported.title || title,
+        artist: imported.artist || artist,
+      };
+    }
+  } catch (err) {
+    if (err instanceof MissingGeminiApiKeyError) throw err;
+    youtubeError = err;
+  }
+
+  // 4. Last resort: generate from title + artist via Gemini
+  try {
+    return await generateSongChordsWithGemini(title, artist, rawUrl);
+  } catch (err) {
+    throw youtubeError ?? err;
+  }
 }

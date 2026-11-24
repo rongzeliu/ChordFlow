@@ -17,9 +17,13 @@ import { planSheet } from './sheet';
 import { SONG_TEMPLATES } from './templates';
 import { parsePnwChordsHtml } from './importers/pnwChords';
 import {
+  cleanCatalogTitle,
   parsePnwChordsWpSearchResults,
+  parseUltimateGuitarSearchHtml,
   parseYouTubeSearchResultsHtml,
+  primaryCatalogArtist,
   rankAndDedupeSearchResults,
+  rankUltimateGuitarCandidates,
 } from './importers/search';
 import {
   parseItunesTracksResponse,
@@ -915,5 +919,79 @@ describe('Firebase Auth & Firestore song persistence helpers', () => {
     expect(merged[0].url).toBe('https://www.pnwchords.com/build-my-life-pat-barrett/');
     expect(merged[0].artworkUrl).toBe('https://i.scdn.co/image/small.jpg');
     expect(merged[0].album).toBe('Pat Barrett');
+  });
+
+  it('parses Ultimate Guitar search results and ranks the best free Chords match for a catalog track', () => {
+    expect(cleanCatalogTitle('Goodness of God (Live) - Remastered 2021')).toBe('Goodness of God');
+    expect(cleanCatalogTitle('Firm Foundation (He Won’t) feat. Chandler Moore')).toBe(
+      'Firm Foundation',
+    );
+    expect(primaryCatalogArtist('Bethel Music & Jenn Johnson')).toBe('Bethel Music');
+    expect(primaryCatalogArtist('Maverick City Music, Elevation Worship')).toBe(
+      'Maverick City Music',
+    );
+
+    const results = [
+      {
+        song_name: 'Build My Life',
+        artist_name: 'Pat Barrett',
+        marketing_type: 'TabPro',
+        tab_url: 'https://www.ultimate-guitar.com/pro/?tab_id=5064349',
+        votes: 99,
+        rating: 4.7,
+      },
+      {
+        song_name: 'Build My Life',
+        artist_name: 'Housefires',
+        type: 'Chords',
+        tab_url: 'https://tabs.ultimate-guitar.com/tab/housefires/build-my-life-chords-1857672',
+        votes: 3123,
+        rating: 4.87,
+      },
+      {
+        song_name: 'Build My Life',
+        artist_name: 'Pat Barrett',
+        type: 'Chords',
+        tab_url: 'https://tabs.ultimate-guitar.com/tab/pat-barrett/build-my-life-chords-2431895',
+        votes: 934,
+        rating: 4.89,
+      },
+      {
+        song_name: 'Build My Life',
+        artist_name: 'Pat Barrett',
+        type: 'Official',
+        tab_url: 'https://tabs.ultimate-guitar.com/tab/pat-barrett/build-my-life-official-5064349',
+        votes: 99,
+        rating: 4.7,
+      },
+      {
+        song_name: 'Another Song',
+        artist_name: 'Pat Barrett',
+        type: 'Chords',
+        tab_url: 'https://tabs.ultimate-guitar.com/tab/pat-barrett/another-song-chords-1',
+        votes: 5000,
+        rating: 5,
+      },
+    ];
+    const encoded = JSON.stringify({ store: { page: { data: { results } } } }).replace(
+      /"/g,
+      '&quot;',
+    );
+    const html = `<html><body><div class="js-store" data-content="${encoded}"></div></body></html>`;
+
+    const candidates = parseUltimateGuitarSearchHtml(html);
+    // Only free "Chords" entries are kept (no Pro / Official)
+    expect(candidates.map((c) => c.url)).toEqual([
+      'https://tabs.ultimate-guitar.com/tab/housefires/build-my-life-chords-1857672',
+      'https://tabs.ultimate-guitar.com/tab/pat-barrett/build-my-life-chords-2431895',
+      'https://tabs.ultimate-guitar.com/tab/pat-barrett/another-song-chords-1',
+    ]);
+
+    // Artist match outranks higher vote counts; non-matching titles are dropped
+    const ranked = rankUltimateGuitarCandidates(candidates, 'Build My Life (Live)', 'Pat Barrett');
+    expect(ranked.map((c) => c.artist)).toEqual(['Pat Barrett', 'Housefires']);
+    expect(ranked[0].url).toBe(
+      'https://tabs.ultimate-guitar.com/tab/pat-barrett/build-my-life-chords-2431895',
+    );
   });
 });

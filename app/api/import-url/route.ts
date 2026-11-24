@@ -9,6 +9,7 @@ import { parseUltimateGuitarHtml } from '@/lib/importers/ultimateGuitar';
 import { parseWorshipTogetherHtml } from '@/lib/importers/worshipTogether';
 import {
   extractYouTubeChordsWithGemini,
+  formatGeminiApiError,
   MissingGeminiApiKeyError,
 } from '@/lib/importers/youtube';
 
@@ -123,8 +124,7 @@ export async function POST(request: Request) {
         { status: 503 },
       );
     }
-    const message =
-      err instanceof Error ? err.message : 'Unable to fetch or parse the provided chord URL.';
+    const message = formatGeminiApiError(err);
     return NextResponse.json({ error: message }, { status: 422 });
   }
 }

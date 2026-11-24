@@ -110,22 +110,80 @@ export function formatGeminiYouTubeSheet(
 export const GEMINI_FALLBACK_MODELS = [
   'gemini-3.8-flash',
   'gemini-3.5-flash-lite',
-  'gemini-2.5-flash',
+  'gemini-3.1-flash-lite',
 ] as const;
 
-function isModelNotFoundError(err: unknown): boolean {
+function isRetryableGeminiModelError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
   return (
     msg.includes('NOT_FOUND') ||
     msg.includes('404') ||
-    msg.includes('is not found for API version') ||
-    msg.includes('not supported for generateContent')
+    lower.includes('is not found for api version') ||
+    lower.includes('not supported for generatecontent') ||
+    msg.includes('UNAVAILABLE') ||
+    msg.includes('503') ||
+    lower.includes('high demand') ||
+    lower.includes('overloaded') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('429')
   );
 }
 
 /**
+ * Formats raw `@google/genai` JSON error payloads into clean user-facing text.
+ */
+export function formatGeminiApiError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? '');
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return 'Unable to fetch or parse the provided chord URL.';
+  }
+
+  let parsedCode: number | undefined;
+  let parsedStatus: string | undefined;
+  let parsedMessage: string | undefined;
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const json = JSON.parse(trimmed) as {
+        error?: { code?: number; message?: string; status?: string };
+      };
+      parsedCode = json.error?.code;
+      parsedStatus = json.error?.status;
+      parsedMessage = json.error?.message;
+    } catch {
+      // Not valid JSON — fall back to raw message
+    }
+  }
+
+  if (
+    parsedCode === 503 ||
+    parsedStatus === 'UNAVAILABLE' ||
+    /high demand|overloaded|503|UNAVAILABLE/i.test(trimmed)
+  ) {
+    return 'AI chord generation is temporarily experiencing high demand. Please try again in a few seconds, or paste a direct chord sheet link.';
+  }
+
+  if (
+    parsedCode === 429 ||
+    parsedStatus === 'RESOURCE_EXHAUSTED' ||
+    /quota|rate limit|429|RESOURCE_EXHAUSTED/i.test(trimmed)
+  ) {
+    return 'AI chord generation rate limit reached. Please wait a moment and try again, or paste a direct chord sheet link.';
+  }
+
+  if (parsedMessage) {
+    return parsedMessage;
+  }
+
+  return trimmed;
+}
+
+/**
  * Calls `ai.models.generateContent` trying `GEMINI_MODEL` (if set) and then
- * `GEMINI_FALLBACK_MODELS` in order, falling back automatically on 404 / NOT_FOUND.
+ * `GEMINI_FALLBACK_MODELS` in order, falling back automatically on 404/NOT_FOUND,
+ * 503/UNAVAILABLE (high demand), or 429/RESOURCE_EXHAUSTED.
  */
 export async function generateContentWithGeminiFallback(
   ai: GoogleGenAI,
@@ -146,7 +204,7 @@ export async function generateContentWithGeminiFallback(
       });
     } catch (err) {
       lastError = err;
-      if (i < candidates.length - 1 && isModelNotFoundError(err)) {
+      if (i < candidates.length - 1 && isRetryableGeminiModelError(err)) {
         continue;
       }
       throw err;
