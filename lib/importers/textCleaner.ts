@@ -1,6 +1,5 @@
 import { guessKeyFromChord, isChord, normalizeKey, transposeKey } from '@/lib/music';
 import { extractChordPositions } from '@/lib/parser';
-import { isStandardTuning } from '@/lib/sheet';
 import type { ImportedSongResponse, ImportProvider } from './types';
 
 const ALLOWED_HOSTS: Record<string, ImportProvider> = {
@@ -253,13 +252,13 @@ export function formatChordFlowDocument(
   const key = resolveShapeKey(bodyLines, meta.key, capo) || 'G';
   const tuning = (meta.tuning || 'E A D G B E').trim();
 
-  const header = [`Title: ${title}`, `Artist: ${artist}`, `Key: ${key}`];
-  if (capo > 0) {
-    header.push(`Capo: ${capo}`);
-  }
-  if (tuning && !isStandardTuning(tuning)) {
-    header.push(`Tuning: ${tuning}`);
-  }
+  const header = [
+    `Title: ${title}`,
+    `Artist: ${artist}`,
+    `Key: ${key}`,
+    `Capo: ${capo}`,
+    `Tuning: ${tuning}`,
+  ];
 
   const normalizedBody = normalizeSongBodyLines(bodyLines);
   return [...header, '', ...normalizedBody].join('\n');

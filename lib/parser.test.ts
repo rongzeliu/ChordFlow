@@ -521,7 +521,7 @@ Jesus be the Name, Jesus be the Name</pre>
     expect(res.key).toBe('C'); // Shape key C + Capo 1 -> Concert Key Db
     expect(res.capo).toBe(1);
     expect(res.formattedText).toContain('Capo: 1');
-    expect(res.formattedText).not.toContain('Tuning: E A D G B E');
+    expect(res.formattedText).toContain('Tuning: E A D G B E');
     expect(res.formattedText).toContain('  C                 Am\nI heard there was a secret chord');
 
     const parsed = parseSong(res.formattedText);

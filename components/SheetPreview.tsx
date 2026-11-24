@@ -10,7 +10,7 @@ import type {
   ParsedSong,
 } from '@/types/chord';
 import { prettyAccidentals } from '@/lib/music';
-import { isStandardTuning, planSheet } from '@/lib/sheet';
+import { planSheet } from '@/lib/sheet';
 import { FretboardSvg } from './FretboardSvg';
 
 interface SheetPreviewProps {
@@ -102,7 +102,7 @@ export function SheetPreview({
           <p style={{ fontSize: pt(9) }} className="font-medium text-muted">
             {prettyAccidentals(plan.keyInfo.summary)}
           </p>
-          {plan.tuning && !isStandardTuning(plan.tuning) && (
+          {plan.tuning && (
             <p style={{ fontSize: pt(8.5) }} className="mt-0.5 font-medium text-muted">
               Tuning: {prettyAccidentals(plan.tuning)}
             </p>

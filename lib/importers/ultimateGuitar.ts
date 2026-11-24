@@ -73,17 +73,16 @@ export function parseUltimateGuitarHtml(html: string, sourceUrl: string): Import
 
   const rawCapo = pageData?.tab_view?.meta?.capo;
   const capoMatch = typeof rawCapo === 'string' ? /(\d{1,2})/.exec(rawCapo) : null;
-  const parsedCapo =
+  let parsedCapo =
     typeof rawCapo === 'number'
       ? rawCapo
       : capoMatch
         ? parseInt(capoMatch[1], 10)
         : 0;
-  const capo = Math.max(0, Math.min(11, parsedCapo));
 
   const tuningName = pageData?.tab_view?.meta?.tuning?.name?.trim() || '';
   const tuningValue = pageData?.tab_view?.meta?.tuning?.value?.trim() || '';
-  const tuning = (() => {
+  let tuning = (() => {
     if (
       tuningName &&
       !/^standard$/i.test(tuningName) &&
@@ -101,6 +100,26 @@ export function parseUltimateGuitarHtml(html: string, sourceUrl: string): Import
     .replace(/\[\/?tab\]/gi, '')
     .split('\n')
     .map((line) => line.replace(/\[\/?ch\]/gi, '').replace(/\s+$/, ''));
+
+  // Fallback: some UG tabs put Capo / Tuning in the top lines of wiki_tab.content instead of meta
+  for (const line of rawLines.slice(0, 15)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (parsedCapo === 0) {
+      const inlineCapo = /^capo\s*(?::|on|fret)?\s*(\d{1,2})\b/i.exec(trimmed);
+      if (inlineCapo) {
+        parsedCapo = parseInt(inlineCapo[1], 10);
+      }
+    }
+    if (/^e\s*a\s*d\s*g\s*b\s*e$/i.test(tuning) || /^standard$/i.test(tuning)) {
+      const inlineTuning = /^tuning\s*:\s*(.+)$/i.exec(trimmed);
+      if (inlineTuning?.[1]?.trim()) {
+        tuning = inlineTuning[1].trim();
+      }
+    }
+  }
+
+  const capo = Math.max(0, Math.min(11, parsedCapo));
 
   const bodyLines = normalizeSongBodyLines(rawLines);
   const shapeKey = resolveShapeKey(bodyLines, rawTonality, capo) || 'G';

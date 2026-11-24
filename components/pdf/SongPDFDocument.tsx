@@ -8,7 +8,7 @@ import type {
   PageSize,
   ParsedSong,
 } from '@/types/chord';
-import { isStandardTuning, planSheet } from '@/lib/sheet';
+import { planSheet } from '@/lib/sheet';
 import { fretsToString } from '@/lib/voicing';
 import { PDFFretboardSvg } from './PDFFretboardSvg';
 
@@ -399,7 +399,7 @@ export const SongPDFDocument = ({
           </View>
           <View style={styles.metaBlock}>
             <Text style={styles.metaPrimary}>{plan.keyInfo.summary}</Text>
-            {plan.tuning && !isStandardTuning(plan.tuning) ? (
+            {plan.tuning ? (
               <Text style={styles.metaSecondary}>Tuning: {plan.tuning}</Text>
             ) : null}
           </View>
